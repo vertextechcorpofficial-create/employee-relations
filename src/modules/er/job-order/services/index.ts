@@ -1,4 +1,6 @@
 export {
+  fetchDepartments,
+  fetchEmployees,
   fetchServiceCategories,
   fetchJobOrders,
   fetchJobOrderById,
@@ -8,7 +10,7 @@ export {
   createServiceCategory,
   updateServiceCategory,
   createJobOrder,
-  updateJobOrderStatus,
+  updateJobOrder,
 } from "@/modules/er/job-order/services/job-order-actions";
 
 export {
@@ -23,4 +25,3 @@ export {
   getDirectusHeaders,
   JO_UPLOAD_FOLDER,
 } from "@/modules/er/job-order/services/job-order-directus";
-

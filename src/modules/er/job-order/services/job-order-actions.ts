@@ -6,7 +6,7 @@ import {
   JobOrderSchema,
   ServiceCategory,
   ServiceCategorySchema,
-  UpdateJobOrderStatusInput,
+  UpdateJobOrderInput,
   UpdateServiceCategoryInput,
 } from "@/modules/er/job-order/types/job-order.schema";
 import {
@@ -78,9 +78,10 @@ export async function updateServiceCategory(
 }
 
 /**
- * Submits a new digital Job Order and links any uploaded picture/document attachments.
+ * Submits a new digital Job Order directed to a target department (and optional person),
+ * and links uploaded picture/document attachments.
  * Note: Initial status is directly "Open" (no intermediate acknowledgement workflow).
- * @param {CreateJobOrderInput} input - Validated JO payload with attachments.
+ * @param {CreateJobOrderInput} input - Validated JO payload with routing and attachments.
  * @param {DecoupledActor} actor - Decoupled requester user ID (no FK) and username.
  * @returns {Promise<JobOrder>} Newly created and hydrated Job Order.
  */
@@ -92,6 +93,10 @@ export async function createJobOrder(
   const requestPayload = {
     jo_number: generateJoNumber(),
     category_id: input.category_id,
+    target_department_id: input.target_department_id,
+    target_department_name: input.target_department_name,
+    target_user_id: input.target_user_id ?? null,
+    target_username: input.target_username ?? null,
     remarks: input.remarks,
     status: "Open",
     requester_user_id: actor.userId,
@@ -130,25 +135,36 @@ export async function createJobOrder(
 }
 
 /**
- * Updates the status of an existing Job Order from the Receiver POV.
+ * Updates the status and/or target routing of an existing Job Order from the Receiver POV.
  * Records the decoupled receiver user ID (no FK) and plain username.
  * @param {number} joId - Target Job Order ID.
- * @param {UpdateJobOrderStatusInput} input - New status value.
+ * @param {UpdateJobOrderInput} input - New status and/or department/person assignment.
  * @param {DecoupledActor} actor - Decoupled receiver user ID and username.
  * @returns {Promise<JobOrder>} Updated and hydrated Job Order.
  */
-export async function updateJobOrderStatus(
+export async function updateJobOrder(
   joId: number,
-  input: UpdateJobOrderStatusInput,
+  input: UpdateJobOrderInput,
   actor: DecoupledActor
 ): Promise<JobOrder> {
   const now = getManilaIsoDateTime();
-  const patchPayload = {
-    status: input.status,
+  const patchPayload: Record<string, unknown> = {
     receiver_user_id: actor.userId,
     receiver_username: actor.username,
     updated_at: now,
   };
+
+  if (input.status !== undefined) {
+    patchPayload.status = input.status;
+  }
+  if (input.target_department_id !== undefined) {
+    patchPayload.target_department_id = input.target_department_id;
+    patchPayload.target_department_name = input.target_department_name ?? null;
+  }
+  if (input.target_user_id !== undefined) {
+    patchPayload.target_user_id = input.target_user_id;
+    patchPayload.target_username = input.target_username ?? null;
+  }
 
   await directusRequest<unknown>(`/items/${JO_COLLECTIONS.REQUEST}/${joId}`, {
     method: "PATCH",
@@ -157,4 +173,3 @@ export async function updateJobOrderStatus(
 
   return fetchJobOrderById(joId);
 }
-

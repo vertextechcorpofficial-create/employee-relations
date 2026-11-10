@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, FileText, Image as ImageIcon, Ticket } from "lucide-react";
+import { Building2, Eye, FileText, Image as ImageIcon, Ticket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,13 +60,13 @@ export function JobOrderTable({
         icon={Ticket}
         title={
           isReceiverMode
-            ? "No incoming Job Orders yet"
+            ? "No matching Job Orders in queue"
             : "No Job Orders submitted yet"
         }
         description={
           isReceiverMode
-            ? "Digital Job Orders submitted from Employee Relations will appear here for direct status updates."
-            : "Submit your first digital Job Order with service category, remarks, and supporting attachments."
+            ? "No Job Orders match the selected department or status filter."
+            : "Submit your first digital Job Order directed to a target department with remarks and attachments."
         }
         actionLabel={!isReceiverMode && onCreateNew ? "Submit Job Order" : undefined}
         onAction={!isReceiverMode ? onCreateNew : undefined}
@@ -83,13 +83,16 @@ export function JobOrderTable({
               JO Number
             </TableHead>
             <TableHead className="font-semibold text-muted-foreground">
-              Service Category
+              Category
+            </TableHead>
+            <TableHead className="font-semibold text-muted-foreground">
+              Directed To
             </TableHead>
             <TableHead className="font-semibold text-muted-foreground">
               Remarks
             </TableHead>
             <TableHead className="font-semibold text-muted-foreground">
-              Attachments
+              Files
             </TableHead>
             <TableHead className="font-semibold text-muted-foreground">
               Requester
@@ -130,7 +133,24 @@ export function JobOrderTable({
                     {jo.category_name ?? `Category #${jo.category_id}`}
                   </Badge>
                 </TableCell>
-                <TableCell className="max-w-[260px] truncate text-sm text-foreground">
+                <TableCell className="text-xs">
+                  {jo.target_department_name ? (
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1 font-medium text-foreground">
+                        <Building2 className="h-3 w-3 text-muted-foreground" />
+                        <span>{jo.target_department_name}</span>
+                      </div>
+                      {jo.target_username && (
+                        <div className="text-muted-foreground">
+                          Attn: {jo.target_username}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">Unassigned</span>
+                  )}
+                </TableCell>
+                <TableCell className="max-w-[220px] truncate text-sm text-foreground">
                   {jo.remarks}
                 </TableCell>
                 <TableCell>
@@ -176,7 +196,7 @@ export function JobOrderTable({
                         void onStatusChange(jo.id, val as JobOrderStatus)
                       }
                     >
-                      <SelectTrigger className="h-8 w-[140px] bg-background text-xs">
+                      <SelectTrigger className="h-8 w-[135px] bg-background text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -218,4 +238,3 @@ export function JobOrderTable({
     </div>
   );
 }
-

@@ -26,6 +26,28 @@ const booleanFlagSchema = z
   .transform((val) => (typeof val === "number" ? val === 1 : val));
 
 /**
+ * Target Department option sourced from Directus `department`.
+ */
+export const DepartmentOptionSchema = z.object({
+  department_id: z.number(),
+  department_name: z.string().min(1),
+});
+
+export type DepartmentOption = z.infer<typeof DepartmentOptionSchema>;
+
+/**
+ * Target Employee option sourced from Directus `user` (active non-deleted users).
+ */
+export const EmployeeOptionSchema = z.object({
+  user_id: z.number(),
+  full_name: z.string().min(1),
+  user_email: z.string().nullable().optional(),
+  user_department: z.number().nullable().optional(),
+});
+
+export type EmployeeOption = z.infer<typeof EmployeeOptionSchema>;
+
+/**
  * Service Category stored in `iot_jo_service_category`.
  */
 export const ServiceCategorySchema = z.object({
@@ -82,7 +104,7 @@ export type AttachmentDraft = z.infer<typeof AttachmentDraftSchema>;
 
 /**
  * Digital Job Order record stored in `iot_jo_request`.
- * Uses decoupled `user_id` (no FK) and plain string `username`.
+ * Uses decoupled `user_id` and `department_id` (no FK) plus plain string names.
  */
 export const JobOrderSchema = z.object({
   id: z.number(),
@@ -95,6 +117,10 @@ export const JobOrderSchema = z.object({
   requester_username: z.string().min(1),
   receiver_user_id: z.number().nullable().optional(),
   receiver_username: z.string().nullable().optional(),
+  target_department_id: z.number().nullable().optional(),
+  target_department_name: z.string().nullable().optional(),
+  target_user_id: z.number().nullable().optional(),
+  target_username: z.string().nullable().optional(),
   attachments: z.array(JobOrderAttachmentSchema).optional(),
   created_at: z.string().nullable().optional(),
   updated_at: z.string().nullable().optional(),
@@ -104,6 +130,16 @@ export type JobOrder = z.infer<typeof JobOrderSchema>;
 
 export const CreateJobOrderSchema = z.object({
   category_id: z.number().int().positive("Please select a service category"),
+  target_department_id: z
+    .number()
+    .int()
+    .positive("Please choose a target department"),
+  target_department_name: z
+    .string()
+    .trim()
+    .min(1, "Target department name is required"),
+  target_user_id: z.number().int().positive().nullable().optional(),
+  target_username: z.string().trim().nullable().optional(),
   remarks: z
     .string()
     .trim()
@@ -114,11 +150,21 @@ export const CreateJobOrderSchema = z.object({
 
 export type CreateJobOrderInput = z.infer<typeof CreateJobOrderSchema>;
 
-export const UpdateJobOrderStatusSchema = z.object({
-  status: JobOrderStatusEnum,
-});
+export const UpdateJobOrderSchema = z
+  .object({
+    status: JobOrderStatusEnum.optional(),
+    target_department_id: z.number().int().positive().nullable().optional(),
+    target_department_name: z.string().trim().nullable().optional(),
+    target_user_id: z.number().int().positive().nullable().optional(),
+    target_username: z.string().trim().nullable().optional(),
+  })
+  .refine(
+    (data) =>
+      data.status !== undefined || data.target_department_id !== undefined,
+    { message: "Either status or target routing must be provided" }
+  );
 
-export type UpdateJobOrderStatusInput = z.infer<typeof UpdateJobOrderStatusSchema>;
+export type UpdateJobOrderInput = z.infer<typeof UpdateJobOrderSchema>;
 
 /**
  * Result returned by the file upload proxy endpoint.
@@ -139,4 +185,3 @@ export interface DecoupledActor {
   userId: number;
   username: string;
 }
-

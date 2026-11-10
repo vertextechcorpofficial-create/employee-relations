@@ -1,17 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useMemo, useRef, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   AlertCircle,
+  Building2,
   FileText,
   Image as ImageIcon,
   Loader2,
   Paperclip,
   Send,
   Upload,
+  UserCheck,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +35,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -43,12 +46,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   CreateJobOrderInput,
+  DepartmentOption,
+  EmployeeOption,
   ServiceCategory,
   UploadedJobOrderFile,
 } from "@/modules/er/job-order/types/job-order.schema";
 
 const JobOrderFormSchema = z.object({
   category_id: z.string().min(1, "Please select a Category of Service"),
+  target_department_id: z.string().min(1, "Please choose a target department"),
+  target_user_id: z.string().optional(),
   remarks: z
     .string()
     .trim()
@@ -62,6 +69,8 @@ interface CreateJobOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categories: ServiceCategory[];
+  departments: DepartmentOption[];
+  employees: EmployeeOption[];
   isSubmitting: boolean;
   onUploadFile: (file: File) => Promise<UploadedJobOrderFile>;
   onSubmit: (payload: CreateJobOrderInput) => Promise<void>;
@@ -69,13 +78,15 @@ interface CreateJobOrderDialogProps {
 }
 
 /**
- * Requester POV dialog for filing a purely digital Job Order with
- * service category, remarks, pictures, and supporting documents.
+ * Requester POV dialog for filing a purely digital Job Order directed to
+ * a target department (and optional employee) with category, remarks, and attachments.
  */
 export function CreateJobOrderDialog({
   open,
   onOpenChange,
   categories,
+  departments,
+  employees,
   isSubmitting,
   onUploadFile,
   onSubmit,
@@ -90,9 +101,43 @@ export function CreateJobOrderDialog({
     resolver: zodResolver(JobOrderFormSchema),
     defaultValues: {
       category_id: "",
+      target_department_id: "",
+      target_user_id: "",
       remarks: "",
     },
   });
+
+  const selectedDeptId = useWatch({
+    control: form.control,
+    name: "target_department_id",
+  });
+
+  const departmentOptions = useMemo(
+    () =>
+      departments.map((dept) => ({
+        value: String(dept.department_id),
+        label: dept.department_name,
+      })),
+    [departments]
+  );
+
+  const employeeOptions = useMemo(() => {
+    const deptNum = selectedDeptId ? Number(selectedDeptId) : null;
+    const filtered = deptNum
+      ? employees.filter((emp) => emp.user_department === deptNum)
+      : employees;
+
+    const listToUse = filtered.length > 0 ? filtered : employees;
+    return [
+      { value: "", label: "Any personnel in target department" },
+      ...listToUse.map((emp) => ({
+        value: String(emp.user_id),
+        label: emp.user_email
+          ? `${emp.full_name} (${emp.user_email})`
+          : `${emp.full_name} (#${emp.user_id})`,
+      })),
+    ];
+  }, [employees, selectedDeptId]);
 
   const handleFilesSelected = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -129,8 +174,20 @@ export function CreateJobOrderDialog({
   };
 
   const handleFormSubmit = async (values: JobOrderFormValues) => {
+    const deptId = Number(values.target_department_id);
+    const selectedDept = departments.find((d) => d.department_id === deptId);
+    const empId = values.target_user_id ? Number(values.target_user_id) : null;
+    const selectedEmp = empId
+      ? employees.find((e) => e.user_id === empId)
+      : undefined;
+
     await onSubmit({
       category_id: Number(values.category_id),
+      target_department_id: deptId,
+      target_department_name:
+        selectedDept?.department_name ?? `Department #${deptId}`,
+      target_user_id: empId,
+      target_username: selectedEmp?.full_name ?? null,
       remarks: values.remarks,
       attachments: uploadedFiles.map((file) => ({
         directus_file_id: file.file_id,
@@ -139,6 +196,7 @@ export function CreateJobOrderDialog({
         attachment_kind: file.attachment_kind,
       })),
     });
+
     form.reset();
     setUploadedFiles([]);
     onOpenChange(false);
@@ -154,11 +212,12 @@ export function CreateJobOrderDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[580px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Submit Digital Job Order</DialogTitle>
           <DialogDescription>
-            Digital record only — no physical document submission required.
+            Digital record only — choose a target department and attach supporting
+            pictures or documents.
           </DialogDescription>
         </DialogHeader>
 
@@ -188,7 +247,7 @@ export function CreateJobOrderDialog({
           <Form {...form}>
             <form
               onSubmit={form.handleSubmit(handleFormSubmit)}
-              className="space-y-5"
+              className="space-y-4"
             >
               <FormField
                 control={form.control}
@@ -218,6 +277,57 @@ export function CreateJobOrderDialog({
                   </FormItem>
                 )}
               />
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="target_department_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        Direct To Department
+                      </FormLabel>
+                      <FormControl>
+                        <SearchableSelect
+                          options={departmentOptions}
+                          value={field.value}
+                          onValueChange={(val) => {
+                            field.onChange(val);
+                            form.setValue("target_user_id", "");
+                          }}
+                          placeholder="Choose department..."
+                          disabled={isSubmitting}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="target_user_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                        Target Employee (Optional)
+                      </FormLabel>
+                      <FormControl>
+                        <SearchableSelect
+                          options={employeeOptions}
+                          value={field.value ?? ""}
+                          onValueChange={field.onChange}
+                          placeholder="Any in department..."
+                          disabled={isSubmitting}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <FormField
                 control={form.control}
@@ -262,7 +372,7 @@ export function CreateJobOrderDialog({
                   type="button"
                   disabled={isUploading || isSubmitting}
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/20 px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/20 px-4 py-5 text-center transition-colors hover:border-primary/50 hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isUploading ? (
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -361,4 +471,3 @@ export function CreateJobOrderDialog({
     </Dialog>
   );
 }
-

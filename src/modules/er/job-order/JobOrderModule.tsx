@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  Building2,
   FolderCog,
   Inbox,
   Plus,
@@ -27,6 +28,7 @@ import { JobOrderTable } from "@/modules/er/job-order/components/data-table/JobO
 import { CategoryFormDialog } from "@/modules/er/job-order/components/forms/CategoryFormDialog";
 import { CreateJobOrderDialog } from "@/modules/er/job-order/components/forms/CreateJobOrderDialog";
 import { JobOrderDetailsModal } from "@/modules/er/job-order/components/modals/JobOrderDetailsModal";
+import { useJobOrderDirectory } from "@/modules/er/job-order/hooks/useJobOrderDirectory";
 import { useJobOrders } from "@/modules/er/job-order/hooks/useJobOrders";
 import { useServiceCategories } from "@/modules/er/job-order/hooks/useServiceCategories";
 import {
@@ -36,20 +38,24 @@ import {
   JobOrder,
   JobOrderStatus,
   ServiceCategory,
+  UpdateJobOrderInput,
 } from "@/modules/er/job-order/types/job-order.schema";
 
 /**
  * Main client shell for the Digital Job Order / Ticketing module.
- * Coordinates Requester POV, Receiver Queue (no acknowledgement gate), and Service Category Registration.
+ * Coordinates Requester POV (department/employee targeting), Receiver Queue
+ * (department filter + direct status updates without acknowledgement), and Service Categories.
  */
 export function JobOrderModule() {
   const myOrders = useJobOrders("my");
   const receiverOrders = useJobOrders("all");
   const categoriesState = useServiceCategories();
+  const directory = useJobOrderDirectory();
 
   const [activeTab, setActiveTab] = useState<string>("my_requests");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("ALL");
 
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] =
@@ -67,6 +73,7 @@ export function JobOrderModule() {
       myOrders.refresh(),
       receiverOrders.refresh(),
       categoriesState.refresh(),
+      directory.refresh(),
     ]);
   };
 
@@ -75,11 +82,24 @@ export function JobOrderModule() {
     await receiverOrders.refresh();
   };
 
-  const handleStatusChange = async (
+  const handleInlineStatusChange = async (
     joId: number,
     nextStatus: JobOrderStatus
   ) => {
-    const updated = await receiverOrders.updateStatus(joId, nextStatus);
+    const updated = await receiverOrders.updateJobOrder(joId, {
+      status: nextStatus,
+    });
+    if (selectedJobOrder?.id === joId) {
+      setSelectedJobOrder(updated);
+    }
+    await myOrders.refresh();
+  };
+
+  const handleModalUpdateJobOrder = async (
+    joId: number,
+    payload: UpdateJobOrderInput
+  ) => {
+    const updated = await receiverOrders.updateJobOrder(joId, payload);
     if (selectedJobOrder?.id === joId) {
       setSelectedJobOrder(updated);
     }
@@ -110,15 +130,20 @@ export function JobOrderModule() {
       list.filter((jo) => {
         const matchesStatus =
           statusFilter === "ALL" || jo.status === statusFilter;
+        const matchesDept =
+          departmentFilter === "ALL" ||
+          String(jo.target_department_id ?? "") === departmentFilter;
         const matchesQuery =
           !q ||
           jo.jo_number.toLowerCase().includes(q) ||
           jo.remarks.toLowerCase().includes(q) ||
           (jo.category_name ?? "").toLowerCase().includes(q) ||
+          (jo.target_department_name ?? "").toLowerCase().includes(q) ||
+          (jo.target_username ?? "").toLowerCase().includes(q) ||
           jo.requester_username.toLowerCase().includes(q);
-        return matchesStatus && matchesQuery;
+        return matchesStatus && matchesDept && matchesQuery;
       });
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, departmentFilter]);
 
   const filteredMyOrders = useMemo(
     () => filterList(myOrders.jobOrders),
@@ -131,14 +156,14 @@ export function JobOrderModule() {
   );
 
   const stats = useMemo(() => {
-    const all = receiverOrders.jobOrders;
+    const all = filteredReceiverOrders;
     return {
       total: all.length,
       open: all.filter((j) => j.status === "Open").length,
       inProgress: all.filter((j) => j.status === "In Progress").length,
       resolved: all.filter((j) => j.status === "Resolved").length,
     };
-  }, [receiverOrders.jobOrders]);
+  }, [filteredReceiverOrders]);
 
   if (myOrders.error && receiverOrders.error && categoriesState.error) {
     return (
@@ -159,8 +184,8 @@ export function JobOrderModule() {
             Job Order & Service Ticketing
           </h1>
           <p className="text-sm text-muted-foreground">
-            Submit digital service requests with pictures and documents, manage
-            categories, and track resolution status.
+            Direct digital service requests to a target department or employee,
+            manage categories, and track resolution status.
           </p>
         </div>
 
@@ -250,20 +275,20 @@ export function JobOrderModule() {
         onValueChange={setActiveTab}
         className="space-y-4"
       >
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <TabsList className="w-full justify-start overflow-x-auto lg:w-auto">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <TabsList className="w-full justify-start overflow-x-auto xl:w-auto">
             <TabsTrigger value="my_requests" className="gap-2">
               <Ticket className="h-4 w-4" />
               My Job Orders
               <Badge variant="secondary" className="ml-1">
-                {myOrders.jobOrders.length}
+                {filteredMyOrders.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="receiver_queue" className="gap-2">
               <Inbox className="h-4 w-4" />
               Receiver Queue (List of JO)
               <Badge variant="secondary" className="ml-1">
-                {receiverOrders.jobOrders.length}
+                {filteredReceiverOrders.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="categories" className="gap-2">
@@ -277,17 +302,39 @@ export function JobOrderModule() {
 
           {activeTab !== "categories" && (
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 sm:w-64 sm:flex-none">
+              <div className="relative flex-1 sm:w-56 sm:flex-none">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search JO #, remarks, category..."
-                  className="pl-8 bg-background"
+                  placeholder="Search JO #, remarks, target..."
+                  className="bg-background pl-8"
                 />
               </div>
+
+              <Select
+                value={departmentFilter}
+                onValueChange={setDepartmentFilter}
+              >
+                <SelectTrigger className="w-[180px] bg-background">
+                  <Building2 className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="All Departments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Departments</SelectItem>
+                  {directory.departments.map((dept) => (
+                    <SelectItem
+                      key={dept.department_id}
+                      value={String(dept.department_id)}
+                    >
+                      {dept.department_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px] bg-background">
+                <SelectTrigger className="w-[140px] bg-background">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -328,7 +375,7 @@ export function JobOrderModule() {
               setSelectedJobOrder(jo);
               setIsDetailsOpen(true);
             }}
-            onStatusChange={handleStatusChange}
+            onStatusChange={handleInlineStatusChange}
           />
         </TabsContent>
 
@@ -356,6 +403,8 @@ export function JobOrderModule() {
         open={isCreateOpen}
         onOpenChange={setIsCreateOpen}
         categories={categoriesState.categories}
+        departments={directory.departments}
+        employees={directory.employees}
         isSubmitting={myOrders.isSubmitting}
         onUploadFile={myOrders.uploadAttachment}
         onSubmit={handleCreateJobOrder}
@@ -378,11 +427,12 @@ export function JobOrderModule() {
         jobOrder={selectedJobOrder}
         open={isDetailsOpen}
         onOpenChange={setIsDetailsOpen}
+        departments={directory.departments}
+        employees={directory.employees}
         isReceiverMode={activeTab === "receiver_queue"}
         isSubmitting={receiverOrders.isSubmitting}
-        onStatusChange={handleStatusChange}
+        onUpdateJobOrder={handleModalUpdateJobOrder}
       />
     </div>
   );
 }
-

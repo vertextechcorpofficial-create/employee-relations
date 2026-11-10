@@ -72,6 +72,10 @@ Inspection of the Directus instance shows three pre-existing collections:
 | `id` | `integer` | Primary Key, Auto-increment |
 | `jo_number` | `varchar(50)` | Auto-generated reference (e.g., `JO-20261110-1234`) |
 | `category_id` | `integer` | References `iot_jo_service_category.id` |
+| `target_department_id` | `integer` | Nullable, **NO FK** (from `department.department_id`) |
+| `target_department_name` | `varchar(150)` | Nullable, plain text department name |
+| `target_user_id` | `integer` | Nullable, **NO FK** (from `user.user_id`) |
+| `target_username` | `varchar(150)` | Nullable, plain text target employee name |
 | `remarks` | `text` | Required request description / remarks |
 | `status` | `varchar(30)` | `'Open' \| 'In Progress' \| 'Resolved' \| 'Cancelled'` *(No `Acknowledged` state)* |
 | `requester_user_id` | `integer` | **NO FK** |

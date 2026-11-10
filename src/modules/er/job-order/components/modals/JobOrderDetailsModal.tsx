@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  Building2,
   Calendar,
   Download,
   ExternalLink,
@@ -9,6 +10,7 @@ import {
   Image as ImageIcon,
   Loader2,
   User,
+  UserCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -29,9 +32,12 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { formatDateTime } from "@/lib/utils";
 import {
+  DepartmentOption,
+  EmployeeOption,
   JO_STATUS_VALUES,
   JobOrder,
   JobOrderStatus,
+  UpdateJobOrderInput,
 } from "@/modules/er/job-order/types/job-order.schema";
 import { JobOrderStatusBadge } from "@/modules/er/job-order/components/data-table/JobOrderStatusBadge";
 
@@ -39,29 +45,74 @@ interface JobOrderDetailsModalProps {
   jobOrder: JobOrder | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  departments: DepartmentOption[];
+  employees: EmployeeOption[];
   isReceiverMode?: boolean;
   isSubmitting?: boolean;
-  onStatusChange?: (joId: number, status: JobOrderStatus) => Promise<void>;
+  onUpdateJobOrder?: (joId: number, payload: UpdateJobOrderInput) => Promise<void>;
 }
 
 /**
- * Displays a digital Job Order record, its picture/document attachments,
- * decoupled requester/receiver metadata, and direct status transitions for receivers.
+ * Displays a digital Job Order record, its target routing (department & optional employee),
+ * picture/document attachments, and direct status/routing management for receivers.
  */
 export function JobOrderDetailsModal({
   jobOrder,
   open,
   onOpenChange,
+  departments,
+  employees,
   isReceiverMode = false,
   isSubmitting = false,
-  onStatusChange,
+  onUpdateJobOrder,
 }: JobOrderDetailsModalProps) {
   const [pendingStatus, setPendingStatus] = useState<JobOrderStatus | null>(null);
+  const [pendingDeptId, setPendingDeptId] = useState<string | null>(null);
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  const currentStatus = pendingStatus ?? jobOrder?.status ?? "Open";
+  const currentDeptId =
+    pendingDeptId !== null
+      ? pendingDeptId
+      : jobOrder?.target_department_id
+      ? String(jobOrder.target_department_id)
+      : "";
+  const currentUserId =
+    pendingUserId !== null
+      ? pendingUserId
+      : jobOrder?.target_user_id
+      ? String(jobOrder.target_user_id)
+      : "";
+
+  const departmentOptions = useMemo(
+    () =>
+      departments.map((d) => ({
+        value: String(d.department_id),
+        label: d.department_name,
+      })),
+    [departments]
+  );
+
+  const employeeOptions = useMemo(() => {
+    const deptNum = currentDeptId ? Number(currentDeptId) : null;
+    const filtered = deptNum
+      ? employees.filter((emp) => emp.user_department === deptNum)
+      : employees;
+    const listToUse = filtered.length > 0 ? filtered : employees;
+    return [
+      { value: "", label: "Any personnel in target department" },
+      ...listToUse.map((emp) => ({
+        value: String(emp.user_id),
+        label: emp.user_email
+          ? `${emp.full_name} (${emp.user_email})`
+          : `${emp.full_name} (#${emp.user_id})`,
+      })),
+    ];
+  }, [employees, currentDeptId]);
 
   if (!jobOrder) return null;
 
-  const currentStatus = pendingStatus ?? jobOrder.status;
   const attachments = jobOrder.attachments ?? [];
   const pictures = attachments.filter((a) => a.attachment_kind === "PICTURE");
   const documents = attachments.filter((a) => a.attachment_kind === "DOCUMENT");
@@ -69,15 +120,43 @@ export function JobOrderDetailsModal({
   const createdDate = jobOrder.created_at ? new Date(jobOrder.created_at) : null;
   const updatedDate = jobOrder.updated_at ? new Date(jobOrder.updated_at) : null;
 
-  const handleApplyStatus = async () => {
-    if (!onStatusChange || currentStatus === jobOrder.status) return;
-    await onStatusChange(jobOrder.id, currentStatus);
+  const hasChanges =
+    currentStatus !== jobOrder.status ||
+    currentDeptId !== String(jobOrder.target_department_id ?? "") ||
+    currentUserId !== String(jobOrder.target_user_id ?? "");
+
+  const handleApplyUpdate = async () => {
+    if (!onUpdateJobOrder || !hasChanges) return;
+
+    const deptIdNum = currentDeptId ? Number(currentDeptId) : null;
+    const dept = deptIdNum
+      ? departments.find((d) => d.department_id === deptIdNum)
+      : undefined;
+
+    const userIdNum = currentUserId ? Number(currentUserId) : null;
+    const emp = userIdNum
+      ? employees.find((e) => e.user_id === userIdNum)
+      : undefined;
+
+    await onUpdateJobOrder(jobOrder.id, {
+      status: currentStatus,
+      target_department_id: deptIdNum,
+      target_department_name:
+        dept?.department_name ?? jobOrder.target_department_name ?? null,
+      target_user_id: userIdNum,
+      target_username: emp?.full_name ?? null,
+    });
+
     setPendingStatus(null);
+    setPendingDeptId(null);
+    setPendingUserId(null);
   };
 
   const handleClose = (nextOpen: boolean) => {
     if (!nextOpen) {
       setPendingStatus(null);
+      setPendingDeptId(null);
+      setPendingUserId(null);
       setPreviewImageUrl(null);
     }
     onOpenChange(nextOpen);
@@ -86,7 +165,7 @@ export function JobOrderDetailsModal({
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[660px]">
           <DialogHeader>
             <div className="flex flex-wrap items-center justify-between gap-2 pr-6">
               <div>
@@ -94,7 +173,8 @@ export function JobOrderDetailsModal({
                   {jobOrder.jo_number}
                 </DialogTitle>
                 <DialogDescription>
-                  Digital Job Order Record • {jobOrder.category_name ?? `Category #${jobOrder.category_id}`}
+                  Digital Job Order Record •{" "}
+                  {jobOrder.category_name ?? `Category #${jobOrder.category_id}`}
                 </DialogDescription>
               </div>
               <JobOrderStatusBadge status={jobOrder.status} />
@@ -102,8 +182,24 @@ export function JobOrderDetailsModal({
           </DialogHeader>
 
           <div className="space-y-5">
-            {/* Decoupled Actor Metadata (No FK) */}
-            <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/30 p-3 sm:grid-cols-2">
+            {/* Target Routing & Decoupled Actor Metadata */}
+            <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/30 p-3 sm:grid-cols-3">
+              <div className="flex items-start gap-2.5">
+                <Building2 className="mt-0.5 h-4 w-4 text-primary" />
+                <div className="text-xs">
+                  <p className="text-muted-foreground">Directed To</p>
+                  <p className="font-semibold text-foreground">
+                    {jobOrder.target_department_name ?? "Unassigned"}
+                  </p>
+                  {jobOrder.target_username ? (
+                    <p className="flex items-center gap-1 text-muted-foreground">
+                      <UserCheck className="h-3 w-3" />
+                      {jobOrder.target_username}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
               <div className="flex items-start gap-2.5">
                 <User className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <div className="text-xs">
@@ -120,9 +216,9 @@ export function JobOrderDetailsModal({
               <div className="flex items-start gap-2.5">
                 <User className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <div className="text-xs">
-                  <p className="text-muted-foreground">Last Updated By (Receiver)</p>
+                  <p className="text-muted-foreground">Last Updated By</p>
                   <p className="font-semibold text-foreground">
-                    {jobOrder.receiver_username ?? "Awaiting Receiver Update"}
+                    {jobOrder.receiver_username ?? "Awaiting Receiver"}
                   </p>
                   {jobOrder.receiver_user_id ? (
                     <p className="text-muted-foreground">
@@ -155,7 +251,9 @@ export function JobOrderDetailsModal({
                 Pictures ({pictures.length})
               </span>
               {pictures.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No pictures attached.</p>
+                <p className="text-xs text-muted-foreground">
+                  No pictures attached.
+                </p>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {pictures.map((pic) => {
@@ -210,13 +308,23 @@ export function JobOrderDetailsModal({
                           </span>
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
-                          <Button variant="ghost" size="sm" asChild className="h-7 px-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            asChild
+                            className="h-7 px-2"
+                          >
                             <a href={viewUrl} target="_blank" rel="noreferrer">
                               <ExternalLink className="mr-1 h-3 w-3" />
                               Open
                             </a>
                           </Button>
-                          <Button variant="outline" size="sm" asChild className="h-7 px-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="h-7 px-2"
+                          >
                             <a href={downloadUrl} download={doc.file_name}>
                               <Download className="mr-1 h-3 w-3" />
                               Download
@@ -248,20 +356,52 @@ export function JobOrderDetailsModal({
               </span>
             </div>
 
-            {/* Receiver Direct Status Update (No Acknowledge Gate) */}
-            {isReceiverMode && onStatusChange && (
+            {/* Receiver Status & Routing Controls (No Acknowledge Gate) */}
+            {isReceiverMode && onUpdateJobOrder && (
               <>
                 <Separator />
-                <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3.5">
                   <div>
                     <p className="text-sm font-medium text-foreground">
-                      Update Job Order Status
+                      Status & Department Routing
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Direct status transition without acknowledgement step.
+                      Update status directly or re-direct to another department
+                      or personnel (no acknowledgement required).
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Target Department
+                      </span>
+                      <SearchableSelect
+                        options={departmentOptions}
+                        value={currentDeptId}
+                        onValueChange={(val) => {
+                          setPendingDeptId(val);
+                          setPendingUserId("");
+                        }}
+                        placeholder="Choose department..."
+                        disabled={isSubmitting}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Assigned Employee (Optional)
+                      </span>
+                      <SearchableSelect
+                        options={employeeOptions}
+                        value={currentUserId}
+                        onValueChange={(val) => setPendingUserId(val)}
+                        placeholder="Any in department..."
+                        disabled={isSubmitting}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <Select
                       value={currentStatus}
                       onValueChange={(val) =>
@@ -269,7 +409,7 @@ export function JobOrderDetailsModal({
                       }
                       disabled={isSubmitting}
                     >
-                      <SelectTrigger className="w-[150px] bg-background">
+                      <SelectTrigger className="w-full bg-background sm:w-[170px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -280,16 +420,15 @@ export function JobOrderDetailsModal({
                         ))}
                       </SelectContent>
                     </Select>
+
                     <Button
-                      onClick={() => void handleApplyStatus()}
-                      disabled={
-                        isSubmitting || currentStatus === jobOrder.status
-                      }
+                      onClick={() => void handleApplyUpdate()}
+                      disabled={isSubmitting || !hasChanges}
                     >
                       {isSubmitting && (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       )}
-                      Save Status
+                      Save Changes
                     </Button>
                   </div>
                 </div>
@@ -325,4 +464,3 @@ export function JobOrderDetailsModal({
     </>
   );
 }
-

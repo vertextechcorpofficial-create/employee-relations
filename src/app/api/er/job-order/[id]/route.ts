@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { UpdateJobOrderStatusSchema } from "@/modules/er/job-order/types/job-order.schema";
+import { UpdateJobOrderSchema } from "@/modules/er/job-order/types/job-order.schema";
 import {
   fetchJobOrderById,
   handleJobOrderApiError,
   resolveDecoupledActor,
-  updateJobOrderStatus,
+  updateJobOrder,
 } from "@/modules/er/job-order/services";
 
 export const runtime = "nodejs";
@@ -51,12 +51,11 @@ export async function PATCH(
     const { id } = await context.params;
     const joId = parseNumericId(id);
     const body: unknown = await request.json();
-    const parsed = UpdateJobOrderStatusSchema.parse(body);
+    const parsed = UpdateJobOrderSchema.parse(body);
 
-    const updated = await updateJobOrderStatus(joId, parsed, actor);
+    const updated = await updateJobOrder(joId, parsed, actor);
     return NextResponse.json({ data: updated }, { status: 200 });
   } catch (error: unknown) {
     return handleJobOrderApiError(error);
   }
 }
-

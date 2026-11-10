@@ -18,10 +18,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const scope = request.nextUrl.searchParams.get("scope") ?? "all";
+    const rawDeptId = request.nextUrl.searchParams.get("departmentId");
+    const parsedDeptId =
+      rawDeptId && Number.isInteger(Number(rawDeptId)) && Number(rawDeptId) > 0
+        ? Number(rawDeptId)
+        : undefined;
+
     const data =
       scope === "my"
-        ? await fetchJobOrders(actor.userId)
-        : await fetchJobOrders();
+        ? await fetchJobOrders(actor.userId, parsedDeptId)
+        : await fetchJobOrders(undefined, parsedDeptId);
 
     return NextResponse.json({ data }, { status: 200 });
   } catch (error: unknown) {
@@ -45,4 +51,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return handleJobOrderApiError(error);
   }
 }
-

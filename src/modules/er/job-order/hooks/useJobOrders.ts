@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   CreateJobOrderInput,
   JobOrder,
-  JobOrderStatus,
+  UpdateJobOrderInput,
   UploadedJobOrderFile,
 } from "@/modules/er/job-order/types/job-order.schema";
 
@@ -20,7 +20,7 @@ async function parseApiError(res: Response, fallback: string): Promise<string> {
 }
 
 /**
- * Manages Job Order fetching, submission, attachment uploading, and status transitions.
+ * Manages Job Order fetching, submission, attachment uploading, and status/routing updates.
  * @param {"my" | "all"} scope - Filters either requester-owned JOs or all receiver queue JOs.
  */
 export function useJobOrders(scope: "my" | "all" = "all") {
@@ -33,14 +33,17 @@ export function useJobOrders(scope: "my" | "all" = "all") {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/er/job-order?scope=${scope}`, { cache: "no-store" });
+      const res = await fetch(`/api/er/job-order?scope=${scope}`, {
+        cache: "no-store",
+      });
       if (!res.ok) {
         throw new Error(await parseApiError(res, "Failed to fetch job orders"));
       }
       const json = (await res.json()) as { data?: JobOrder[] };
       setJobOrders(json.data ?? []);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to fetch job orders";
+      const msg =
+        err instanceof Error ? err.message : "Failed to fetch job orders";
       setError(msg);
       toast.error("Job Orders Error", { description: msg });
     } finally {
@@ -72,7 +75,9 @@ export function useJobOrders(scope: "my" | "all" = "all") {
       });
 
       if (!res.ok) {
-        throw new Error(await parseApiError(res, `Failed to upload "${rawFile.name}"`));
+        throw new Error(
+          await parseApiError(res, `Failed to upload "${rawFile.name}"`)
+        );
       }
 
       const json = (await res.json()) as { data: UploadedJobOrderFile };
@@ -91,16 +96,19 @@ export function useJobOrders(scope: "my" | "all" = "all") {
           body: JSON.stringify(input),
         });
         if (!res.ok) {
-          throw new Error(await parseApiError(res, "Failed to submit job order"));
+          throw new Error(
+            await parseApiError(res, "Failed to submit job order")
+          );
         }
         const json = (await res.json()) as { data: JobOrder };
         setJobOrders((prev) => [json.data, ...prev]);
         toast.success("Job Order Submitted", {
-          description: `Digital record ${json.data.jo_number} created.`,
+          description: `${json.data.jo_number} directed to ${json.data.target_department_name ?? "Receiver"}.`,
         });
         return json.data;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to submit job order";
+        const msg =
+          err instanceof Error ? err.message : "Failed to submit job order";
         toast.error("Submission Failed", { description: msg });
         throw err;
       } finally {
@@ -110,29 +118,34 @@ export function useJobOrders(scope: "my" | "all" = "all") {
     []
   );
 
-  const updateStatus = useCallback(
-    async (joId: number, status: JobOrderStatus): Promise<JobOrder> => {
+  const updateJobOrder = useCallback(
+    async (joId: number, input: UpdateJobOrderInput): Promise<JobOrder> => {
       setIsSubmitting(true);
       try {
         const res = await fetch(`/api/er/job-order/${joId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
+          body: JSON.stringify(input),
         });
         if (!res.ok) {
-          throw new Error(await parseApiError(res, "Failed to update job order status"));
+          throw new Error(
+            await parseApiError(res, "Failed to update job order")
+          );
         }
         const json = (await res.json()) as { data: JobOrder };
         setJobOrders((prev) =>
           prev.map((item) => (item.id === joId ? json.data : item))
         );
-        toast.success("Status Updated", {
-          description: `${json.data.jo_number} marked as ${status}.`,
+        toast.success("Job Order Updated", {
+          description: input.status
+            ? `${json.data.jo_number} marked as ${input.status}.`
+            : `${json.data.jo_number} routing updated.`,
         });
         return json.data;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to update status";
-        toast.error("Status Update Failed", { description: msg });
+        const msg =
+          err instanceof Error ? err.message : "Failed to update job order";
+        toast.error("Update Failed", { description: msg });
         throw err;
       } finally {
         setIsSubmitting(false);
@@ -150,7 +163,6 @@ export function useJobOrders(scope: "my" | "all" = "all") {
     refresh,
     uploadAttachment,
     submitJobOrder,
-    updateStatus,
+    updateJobOrder,
   };
 }
-

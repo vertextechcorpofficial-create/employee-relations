@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  DepartmentOption,
+  DepartmentOptionSchema,
+  EmployeeOption,
+  EmployeeOptionSchema,
   JobOrder,
   JobOrderAttachment,
   JobOrderAttachmentSchema,
@@ -11,6 +15,76 @@ import {
   directusRequest,
   JO_COLLECTIONS,
 } from "@/modules/er/job-order/services/job-order-directus";
+
+interface DirectusUserRow {
+  user_id: number;
+  user_fname?: string | null;
+  user_lname?: string | null;
+  user_email?: string | null;
+  user_department?: number | null;
+  is_deleted?: boolean | number | { type?: string; data?: number[] } | null;
+}
+
+function isUserDeleted(raw: DirectusUserRow["is_deleted"]): boolean {
+  if (raw === true || raw === 1) return true;
+  if (raw && typeof raw === "object" && Array.isArray(raw.data)) {
+    return raw.data[0] === 1;
+  }
+  return false;
+}
+
+/**
+ * Fetches all departments from Directus `department` for targeting Job Orders.
+ * @returns {Promise<DepartmentOption[]>} Sorted list of departments.
+ */
+export async function fetchDepartments(): Promise<DepartmentOption[]> {
+  const params = new URLSearchParams({
+    fields: "department_id,department_name",
+    sort: "department_name",
+    limit: "-1",
+  });
+
+  const raw = await directusRequest<unknown[]>(
+    `/items/department?${params.toString()}`
+  );
+
+  return z
+    .array(DepartmentOptionSchema)
+    .parse(Array.isArray(raw) ? raw : []);
+}
+
+/**
+ * Fetches active non-deleted employees from Directus `user`.
+ * @returns {Promise<EmployeeOption[]>} Sorted list of employees with department mapping.
+ */
+export async function fetchEmployees(): Promise<EmployeeOption[]> {
+  const params = new URLSearchParams({
+    fields: "user_id,user_fname,user_lname,user_email,user_department,is_deleted",
+    sort: "user_fname,user_lname",
+    limit: "-1",
+  });
+
+  const raw = await directusRequest<DirectusUserRow[]>(
+    `/items/user?${params.toString()}`
+  );
+
+  const mapped = (Array.isArray(raw) ? raw : [])
+    .filter((row) => !isUserDeleted(row.is_deleted))
+    .map((row) => {
+      const fullName = [row.user_fname, row.user_lname]
+        .filter((part): part is string => Boolean(part && part.trim()))
+        .join(" ")
+        .trim();
+      return {
+        user_id: row.user_id,
+        full_name: fullName || row.user_email || `User #${row.user_id}`,
+        user_email: row.user_email ?? null,
+        user_department: row.user_department ?? null,
+      };
+    });
+
+  return z.array(EmployeeOptionSchema).parse(mapped);
+}
 
 /**
  * Fetches all registered service categories ordered alphabetically.
@@ -74,18 +148,21 @@ async function hydrateJobOrders(rawOrders: JobOrder[]): Promise<JobOrder[]> {
 
   return rawOrders.map((order) => ({
     ...order,
-    category_name: categoryMap.get(order.category_id) ?? `Category #${order.category_id}`,
+    category_name:
+      categoryMap.get(order.category_id) ?? `Category #${order.category_id}`,
     attachments: attachmentsByJoId.get(order.id) ?? [],
   }));
 }
 
 /**
- * Fetches digital Job Orders optionally scoped to a specific requester user ID.
+ * Fetches digital Job Orders optionally scoped to a requester or target department.
  * @param {number} requesterUserId - Optional requester user ID filter.
+ * @param {number} departmentId - Optional target department ID filter.
  * @returns {Promise<JobOrder[]>} Validated and hydrated Job Orders sorted newest first.
  */
 export async function fetchJobOrders(
-  requesterUserId?: number
+  requesterUserId?: number,
+  departmentId?: number
 ): Promise<JobOrder[]> {
   const params = new URLSearchParams({
     sort: "-created_at,-id",
@@ -94,6 +171,10 @@ export async function fetchJobOrders(
 
   if (requesterUserId !== undefined) {
     params.set("filter[requester_user_id][_eq]", String(requesterUserId));
+  }
+
+  if (departmentId !== undefined) {
+    params.set("filter[target_department_id][_eq]", String(departmentId));
   }
 
   const raw = await directusRequest<unknown[]>(
@@ -125,4 +206,3 @@ export async function fetchJobOrderById(joId: number): Promise<JobOrder> {
   const [hydrated] = await hydrateJobOrders([parsed]);
   return hydrated;
 }
-
