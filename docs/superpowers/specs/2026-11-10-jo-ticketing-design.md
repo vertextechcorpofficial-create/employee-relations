@@ -53,9 +53,9 @@ Inspection of the Directus instance shows three pre-existing collections:
 > [!IMPORTANT]
 > **No Foreign Keys on Users**: Per specification, `user_id` columns MUST be plain integers/strings with **NO foreign key constraint** (`M2O` relation) to `user` or `directus_users`. `username` MUST be stored directly as a plain `varchar` column (hardcoded or captured directly without table joins).
 
-### Proposed Schema (New `jo_*` Tables or Adapted `ticket*` Tables)
+### Finalized Schema (`iot_jo_*` Directus Collections Created)
 
-#### 1. `jo_service_category` *(or `ticket_category`)*
+#### 1. `iot_jo_service_category`
 | Field | Type | Constraints / Notes |
 |---|---|---|
 | `id` | `integer` | Primary Key, Auto-increment |
@@ -63,30 +63,30 @@ Inspection of the Directus instance shows three pre-existing collections:
 | `description` | `text` | Optional description of the service category |
 | `is_active` | `boolean` | Default `true` (`1`) |
 | `created_by_user_id` | `integer` | **NO FK** |
-| `created_by_username` | `varchar(100)` | Plain text / hardcoded username string |
+| `created_by_username` | `varchar(100)` | Plain text / hardcoded fallback (`"ER_REQUESTER"`) |
 | `created_at` | `datetime` | Timestamp of creation |
 
-#### 2. `jo_request` *(or `ticket`)*
+#### 2. `iot_jo_request`
 | Field | Type | Constraints / Notes |
 |---|---|---|
 | `id` | `integer` | Primary Key, Auto-increment |
-| `jo_number` | `varchar(50)` | Auto-generated reference (e.g., `JO-20261110-0001`) |
-| `category_id` | `integer` | References `jo_service_category.id` |
+| `jo_number` | `varchar(50)` | Auto-generated reference (e.g., `JO-20261110-1234`) |
+| `category_id` | `integer` | References `iot_jo_service_category.id` |
 | `remarks` | `text` | Required request description / remarks |
 | `status` | `varchar(30)` | `'Open' \| 'In Progress' \| 'Resolved' \| 'Cancelled'` *(No `Acknowledged` state)* |
 | `requester_user_id` | `integer` | **NO FK** |
-| `requester_username` | `varchar(100)` | Plain text / hardcoded username string |
+| `requester_username` | `varchar(100)` | Plain text / hardcoded fallback (`"ER_REQUESTER"`) |
 | `receiver_user_id` | `integer` | Nullable, **NO FK** |
-| `receiver_username` | `varchar(100)` | Nullable, plain text / hardcoded username string |
+| `receiver_username` | `varchar(100)` | Nullable, plain text / hardcoded fallback (`"CR_RECEIVER"`) |
 | `created_at` | `datetime` | Timestamp |
 | `updated_at` | `datetime` | Timestamp |
 
-#### 3. `jo_attachment` *(Supports Pictures + Supporting Documents)*
+#### 3. `iot_jo_attachment` *(Supports Pictures + Supporting Documents)*
 | Field | Type | Constraints / Notes |
 |---|---|---|
 | `id` | `integer` | Primary Key, Auto-increment |
-| `jo_id` | `integer` | References `jo_request.id` |
-| `directus_file_id` | `uuid` | Directus file ID from `/files` |
+| `jo_id` | `integer` | References `iot_jo_request.id` |
+| `directus_file_id` | `uuid` | Directus file ID from `/files` (stored in folder `job_order`) |
 | `file_name` | `varchar(255)` | Original filename |
 | `file_type` | `varchar(100)` | MIME type (e.g., `image/jpeg`, `application/pdf`) |
 | `attachment_kind` | `varchar(20)` | `'PICTURE' \| 'DOCUMENT'` |
@@ -150,9 +150,10 @@ src/modules/er/job-order/
 
 ---
 
-## 7. Open Questions to Confirm Before Implementation
+## 7. Confirmed Design Decisions
 
-1. **Database Tables**: Should we reuse/extend the existing `ticket`, `ticket_category`, and `ticket_activity` Directus tables, or create brand-new `jo_*` tables (`jo_service_category`, `jo_request`, `jo_attachment`)?
-2. **Request Receiver View Location**: Should we include a **"Receiver Queue / List of JO"** tab inside this ER module (for testing/managing incoming JOs with status updates), or will the Receiver POV live strictly in a separate Customer Relations repository?
-3. **Hardcoded Username Behavior**: For `username (hardcoded)`, should we use fixed constant strings (e.g., `"ER_REQUESTER"` / `"CR_RECEIVER"`), or capture the logged-in user's username into the plain string column with a hardcoded fallback?
-4. **Category Registration Access**: Should **"Registration of Categories of Services"** be a tab inside `/er/job-order` (available to users/admins on the same page) or a dedicated sub-route?
+1. **Database Tables**: Created dedicated `iot_jo_service_category`, `iot_jo_request`, and `iot_jo_attachment` collections in Directus with zero foreign keys on `user_id` columns.
+2. **Request Receiver View Location**: Included both **My Job Orders (Requester POV)** and **Receiver Queue (List of JO)** tabs inside `/er/job-order` so end-to-end status updates (without an acknowledgement gate) can be tested directly.
+3. **Decoupled Identity Behavior**: Captures active session `userId` and `username` into plain fields when authenticated, falling back to hardcoded constants (`"ER_REQUESTER"` / `"CR_RECEIVER"`) when auth is bypassed.
+4. **Category Registration Placement**: Mounted as the **"Categories of Services"** tab inside `/er/job-order`.
+
