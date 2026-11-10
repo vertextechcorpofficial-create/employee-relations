@@ -46,6 +46,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   CreateJobOrderInput,
+  CurrentUserDirectory,
   DepartmentOption,
   EmployeeOption,
   ServiceCategory,
@@ -68,6 +69,7 @@ type JobOrderFormValues = z.infer<typeof JobOrderFormSchema>;
 interface CreateJobOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  currentUser?: CurrentUserDirectory | null;
   categories: ServiceCategory[];
   departments: DepartmentOption[];
   employees: EmployeeOption[];
@@ -84,6 +86,7 @@ interface CreateJobOrderDialogProps {
 export function CreateJobOrderDialog({
   open,
   onOpenChange,
+  currentUser,
   categories,
   departments,
   employees,
@@ -220,6 +223,21 @@ export function CreateJobOrderDialog({
             pictures or documents.
           </DialogDescription>
         </DialogHeader>
+
+        {currentUser && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Requester: {currentUser.username}
+            </span>
+            <span>•</span>
+            <span>
+              Your Department:{" "}
+              <strong className="text-foreground">
+                {currentUser.department_name ?? "Unassigned"}
+              </strong>
+            </span>
+          </div>
+        )}
 
         {activeCategories.length === 0 ? (
           <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-muted/40 p-4">

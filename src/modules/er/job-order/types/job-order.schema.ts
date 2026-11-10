@@ -185,3 +185,16 @@ export interface DecoupledActor {
   userId: number;
   username: string;
 }
+
+/**
+ * Current user directory identity including resolved department information.
+ */
+export const CurrentUserDirectorySchema = z.object({
+  user_id: z.number().int().positive(),
+  username: z.string().min(1),
+  department_id: z.number().int().positive().nullable(),
+  department_name: z.string().nullable(),
+});
+
+export type CurrentUserDirectory = z.infer<typeof CurrentUserDirectorySchema>;
+

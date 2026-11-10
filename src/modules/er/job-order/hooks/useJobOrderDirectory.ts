@@ -2,16 +2,20 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  CurrentUserDirectory,
   DepartmentOption,
   EmployeeOption,
 } from "@/modules/er/job-order/types/job-order.schema";
 
 /**
- * Fetches available target Departments and active Employees for routing Job Orders.
+ * Fetches available target Departments, active Employees, and current user identity for Job Orders.
  */
 export function useJobOrderDirectory() {
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [currentUser, setCurrentUser] = useState<CurrentUserDirectory | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,10 +36,12 @@ export function useJobOrderDirectory() {
         data?: {
           departments?: DepartmentOption[];
           employees?: EmployeeOption[];
+          currentUser?: CurrentUserDirectory;
         };
       };
       setDepartments(json.data?.departments ?? []);
       setEmployees(json.data?.employees ?? []);
+      setCurrentUser(json.data?.currentUser ?? null);
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Failed to load directory";
@@ -52,6 +58,7 @@ export function useJobOrderDirectory() {
   return {
     departments,
     employees,
+    currentUser,
     isLoading,
     error,
     refresh,

@@ -21,8 +21,21 @@ export async function GET(): Promise<NextResponse> {
       fetchEmployees(),
     ]);
 
+    const currentEmployee = employees.find((e) => e.user_id === actor.userId);
+    const departmentId = currentEmployee?.user_department ?? null;
+    const currentDept = departments.find(
+      (d) => d.department_id === departmentId
+    );
+
+    const currentUser = {
+      user_id: actor.userId,
+      username: currentEmployee?.full_name || actor.username,
+      department_id: departmentId,
+      department_name: currentDept?.department_name ?? null,
+    };
+
     return NextResponse.json(
-      { data: { departments, employees } },
+      { data: { departments, employees, currentUser } },
       { status: 200 }
     );
   } catch (error: unknown) {

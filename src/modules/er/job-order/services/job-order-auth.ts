@@ -5,8 +5,8 @@ import { DecoupledActor } from "@/modules/er/job-order/types/job-order.schema";
 export type ActorRoleContext = "REQUESTER" | "RECEIVER";
 
 const HARDCODED_FALLBACKS: Record<ActorRoleContext, DecoupledActor> = {
-  REQUESTER: { userId: 1, username: "ER_REQUESTER" },
-  RECEIVER: { userId: 2, username: "CR_RECEIVER" },
+  REQUESTER: { userId: 24, username: "Andrei Siapno" },
+  RECEIVER: { userId: 24, username: "Andrei Siapno" },
 };
 
 function pickNonEmptyString(
