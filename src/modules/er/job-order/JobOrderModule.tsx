@@ -299,27 +299,42 @@ export function JobOrderModule() {
       >
         <div className="flex flex-nowrap items-center justify-between gap-3 overflow-x-auto pb-1">
           <TabsList className="h-9 shrink-0 gap-1 bg-muted/60 p-1">
-            <TabsTrigger value="my_requests" className="h-7 gap-1.5 px-3 text-xs">
-              <Ticket className="h-3.5 w-3.5" />
-              <span>Job Orders</span>
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+            <TabsTrigger
+              value="my_requests"
+              className="h-7 shrink-0 gap-1.5 px-3 text-xs whitespace-nowrap"
+            >
+              <Ticket className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Job Orders</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 h-4 shrink-0 px-1 text-[10px]"
+              >
                 {filteredMyOrders.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger
               value="receiver_queue"
-              className="h-7 gap-1.5 px-3 text-xs"
+              className="h-7 shrink-0 gap-1.5 px-3 text-xs whitespace-nowrap"
             >
-              <Inbox className="h-3.5 w-3.5" />
-              <span>Receiver&apos;s Queue</span>
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+              <Inbox className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Receiver&apos;s Queue</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 h-4 shrink-0 px-1 text-[10px]"
+              >
                 {filteredReceiverOrders.length}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="categories" className="h-7 gap-1.5 px-3 text-xs">
-              <FolderCog className="h-3.5 w-3.5" />
-              <span>Categories</span>
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+            <TabsTrigger
+              value="categories"
+              className="h-7 shrink-0 gap-1.5 px-3 text-xs whitespace-nowrap"
+            >
+              <FolderCog className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Categories</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 h-4 shrink-0 px-1 text-[10px]"
+              >
                 {categoriesState.categories.length}
               </Badge>
             </TabsTrigger>
@@ -333,7 +348,7 @@ export function JobOrderModule() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search JO #..."
-                  className="h-9 bg-background pl-8 text-xs"
+                  className="h-9 bg-background pl-8 text-xs whitespace-nowrap"
                 />
               </div>
 
@@ -341,16 +356,21 @@ export function JobOrderModule() {
                 value={departmentFilter}
                 onValueChange={setDepartmentFilter}
               >
-                <SelectTrigger className="h-9 w-[160px] shrink-0 bg-background text-xs">
-                  <Building2 className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="All Departments" />
+                <SelectTrigger className="h-9 min-w-[195px] w-auto shrink-0 bg-background text-xs whitespace-nowrap">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <SelectValue placeholder="All Departments" />
+                  </div>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Departments</SelectItem>
+                  <SelectItem value="ALL" className="whitespace-nowrap">
+                    All Departments
+                  </SelectItem>
                   {directory.departments.map((dept) => (
                     <SelectItem
                       key={dept.department_id}
                       value={String(dept.department_id)}
+                      className="whitespace-nowrap"
                     >
                       {dept.department_name}
                     </SelectItem>
