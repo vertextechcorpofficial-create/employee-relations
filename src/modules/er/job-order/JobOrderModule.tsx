@@ -275,40 +275,43 @@ export function JobOrderModule() {
         onValueChange={setActiveTab}
         className="space-y-4"
       >
-        <div className="flex flex-col gap-3">
-          <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
-            <TabsTrigger value="my_requests" className="gap-2">
-              <Ticket className="h-4 w-4" />
-              My Job Orders
-              <Badge variant="secondary" className="ml-1">
+        <div className="flex flex-nowrap items-center justify-between gap-3 overflow-x-auto pb-1">
+          <TabsList className="h-9 shrink-0 gap-1 bg-muted/60 p-1">
+            <TabsTrigger value="my_requests" className="h-7 gap-1.5 px-3 text-xs">
+              <Ticket className="h-3.5 w-3.5" />
+              <span>Job Orders</span>
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                 {filteredMyOrders.length}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="receiver_queue" className="gap-2">
-              <Inbox className="h-4 w-4" />
-              Receiver Queue (List of JO)
-              <Badge variant="secondary" className="ml-1">
+            <TabsTrigger
+              value="receiver_queue"
+              className="h-7 gap-1.5 px-3 text-xs"
+            >
+              <Inbox className="h-3.5 w-3.5" />
+              <span>Receiver&apos;s Queue</span>
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                 {filteredReceiverOrders.length}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="categories" className="gap-2">
-              <FolderCog className="h-4 w-4" />
-              Categories of Services
-              <Badge variant="secondary" className="ml-1">
+            <TabsTrigger value="categories" className="h-7 gap-1.5 px-3 text-xs">
+              <FolderCog className="h-3.5 w-3.5" />
+              <span>Categories</span>
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                 {categoriesState.categories.length}
               </Badge>
             </TabsTrigger>
           </TabsList>
 
           {activeTab !== "categories" && (
-            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
-              <div className="relative min-w-[200px] max-w-sm flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <div className="flex flex-nowrap items-center gap-2 shrink-0">
+              <div className="relative w-44 lg:w-56 shrink-0">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search JO #, remarks, target..."
-                  className="bg-background pl-8"
+                  placeholder="Search JO #..."
+                  className="h-9 bg-background pl-8 text-xs"
                 />
               </div>
 
@@ -316,7 +319,7 @@ export function JobOrderModule() {
                 value={departmentFilter}
                 onValueChange={setDepartmentFilter}
               >
-                <SelectTrigger className="w-[180px] shrink-0 bg-background">
+                <SelectTrigger className="h-9 w-[160px] shrink-0 bg-background text-xs">
                   <Building2 className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
                   <SelectValue placeholder="All Departments" />
                 </SelectTrigger>
@@ -359,7 +362,7 @@ export function JobOrderModule() {
               )}
 
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px] shrink-0 bg-background">
+                <SelectTrigger className="h-9 w-[130px] shrink-0 bg-background text-xs">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
                 <SelectContent>
