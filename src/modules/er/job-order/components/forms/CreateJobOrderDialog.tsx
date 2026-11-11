@@ -52,16 +52,29 @@ import {
   UploadedJobOrderFile,
 } from "@/modules/er/job-order/types/job-order.schema";
 
-const JobOrderFormSchema = z.object({
-  category_id: z.string().min(1, "Please select a Category of Service"),
-  target_department_id: z.string().min(1, "Please choose a target department"),
-  target_user_id: z.string().optional(),
-  remarks: z
-    .string()
-    .trim()
-    .min(3, "Remarks are required (at least 3 characters)")
-    .max(2000, "Remarks must be 2000 characters or fewer"),
-});
+const JobOrderFormSchema = z
+  .object({
+    category_id: z.string().min(1, "Please select a Category of Service"),
+    target_department_id: z.string().optional(),
+    target_user_id: z.string().optional(),
+    remarks: z
+      .string()
+      .trim()
+      .min(3, "Remarks are required (at least 3 characters)")
+      .max(2000, "Remarks must be 2000 characters or fewer"),
+  })
+  .refine(
+    (data) =>
+      Boolean(
+        (data.target_department_id &&
+          data.target_department_id.trim() !== "") ||
+          (data.target_user_id && data.target_user_id.trim() !== "")
+      ),
+    {
+      message: "Please choose a target Department, a target Personnel, or both",
+      path: ["target_department_id"],
+    }
+  );
 
 type JobOrderFormValues = z.infer<typeof JobOrderFormSchema>;
 
@@ -113,11 +126,13 @@ export function CreateJobOrderDialog({
   });
 
   const departmentOptions = useMemo(
-    () =>
-      departments.map((dept) => ({
+    () => [
+      { value: "", label: "None (Target Personnel Only)" },
+      ...departments.map((dept) => ({
         value: String(dept.department_id),
         label: dept.department_name,
       })),
+    ],
     [departments]
   );
 
@@ -127,10 +142,14 @@ export function CreateJobOrderDialog({
       ? employees.filter((emp) => emp.user_department === deptNum)
       : employees;
 
-    const listToUse = filtered.length > 0 ? filtered : employees;
     return [
-      { value: "", label: "Any personnel in target department" },
-      ...listToUse.map((emp) => ({
+      {
+        value: "",
+        label: deptNum
+          ? "Any personnel in department (Department Only)"
+          : "None (Target Department Only)",
+      },
+      ...filtered.map((emp) => ({
         value: String(emp.user_id),
         label: emp.user_email
           ? `${emp.full_name} (${emp.user_email})`
@@ -174,9 +193,17 @@ export function CreateJobOrderDialog({
   };
 
   const handleFormSubmit = async (values: JobOrderFormValues) => {
-    const deptId = Number(values.target_department_id);
-    const selectedDept = departments.find((d) => d.department_id === deptId);
-    const empId = values.target_user_id ? Number(values.target_user_id) : null;
+    const deptId =
+      values.target_department_id && values.target_department_id.trim() !== ""
+        ? Number(values.target_department_id)
+        : null;
+    const selectedDept = deptId
+      ? departments.find((d) => d.department_id === deptId)
+      : undefined;
+    const empId =
+      values.target_user_id && values.target_user_id.trim() !== ""
+        ? Number(values.target_user_id)
+        : null;
     const selectedEmp = empId
       ? employees.find((e) => e.user_id === empId)
       : undefined;
@@ -184,8 +211,7 @@ export function CreateJobOrderDialog({
     await onSubmit({
       category_id: Number(values.category_id),
       target_department_id: deptId,
-      target_department_name:
-        selectedDept?.department_name ?? `Department #${deptId}`,
+      target_department_name: selectedDept?.department_name ?? null,
       target_user_id: empId,
       target_username: selectedEmp?.full_name ?? null,
       remarks: values.remarks,
@@ -286,15 +312,28 @@ export function CreateJobOrderDialog({
                     <FormItem>
                       <FormLabel className="flex items-center gap-1.5">
                         <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                        Direct To Department
+                        Target Department (Optional)
                       </FormLabel>
                       <FormControl>
                         <SearchableSelect
                           options={departmentOptions}
-                          value={field.value}
+                          value={field.value ?? ""}
                           onValueChange={(val) => {
                             field.onChange(val);
-                            form.setValue("target_user_id", "");
+                            if (val) {
+                              const currUser = form.getValues("target_user_id");
+                              if (currUser) {
+                                const emp = employees.find(
+                                  (e) => String(e.user_id) === currUser
+                                );
+                                if (
+                                  emp?.user_department &&
+                                  String(emp.user_department) !== val
+                                ) {
+                                  form.setValue("target_user_id", "");
+                                }
+                              }
+                            }
                           }}
                           placeholder="Choose department..."
                           disabled={isSubmitting}
@@ -312,14 +351,14 @@ export function CreateJobOrderDialog({
                     <FormItem>
                       <FormLabel className="flex items-center gap-1.5">
                         <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
-                        Target Employee (Optional)
+                        Target Personnel (Optional)
                       </FormLabel>
                       <FormControl>
                         <SearchableSelect
                           options={employeeOptions}
                           value={field.value ?? ""}
                           onValueChange={field.onChange}
-                          placeholder="Any in department..."
+                          placeholder="Choose personnel..."
                           disabled={isSubmitting}
                         />
                       </FormControl>
@@ -328,6 +367,10 @@ export function CreateJobOrderDialog({
                   )}
                 />
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                You can route to a Department only, an individual Personnel
+                only, or both.
+              </p>
 
               <FormField
                 control={form.control}

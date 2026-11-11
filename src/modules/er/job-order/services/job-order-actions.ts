@@ -93,8 +93,8 @@ export async function createJobOrder(
   const requestPayload = {
     jo_number: generateJoNumber(),
     category_id: input.category_id,
-    target_department_id: input.target_department_id,
-    target_department_name: input.target_department_name,
+    target_department_id: input.target_department_id ?? null,
+    target_department_name: input.target_department_name ?? null,
     target_user_id: input.target_user_id ?? null,
     target_username: input.target_username ?? null,
     remarks: input.remarks,

@@ -1,6 +1,13 @@
 "use client";
 
-import { Building2, Eye, FileText, Image as ImageIcon, Ticket } from "lucide-react";
+import {
+  Building2,
+  Eye,
+  FileText,
+  Image as ImageIcon,
+  Ticket,
+  UserCheck,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -134,15 +141,22 @@ export function JobOrderTable({
                   </Badge>
                 </TableCell>
                 <TableCell className="text-xs">
-                  {jo.target_department_name ? (
+                  {jo.target_department_name || jo.target_username ? (
                     <div className="space-y-0.5">
-                      <div className="flex items-center gap-1 font-medium text-foreground">
-                        <Building2 className="h-3 w-3 text-muted-foreground" />
-                        <span>{jo.target_department_name}</span>
-                      </div>
+                      {jo.target_department_name && (
+                        <div className="flex items-center gap-1 font-medium text-foreground">
+                          <Building2 className="h-3 w-3 text-muted-foreground" />
+                          <span>{jo.target_department_name}</span>
+                        </div>
+                      )}
                       {jo.target_username && (
-                        <div className="text-muted-foreground">
-                          Attn: {jo.target_username}
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <UserCheck className="h-3 w-3 text-muted-foreground" />
+                          <span>
+                            {jo.target_department_name
+                              ? `Attn: ${jo.target_username}`
+                              : jo.target_username}
+                          </span>
                         </div>
                       )}
                     </div>

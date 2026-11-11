@@ -86,11 +86,13 @@ export function JobOrderDetailsModal({
       : "";
 
   const departmentOptions = useMemo(
-    () =>
-      departments.map((d) => ({
+    () => [
+      { value: "", label: "None (Personnel Only)" },
+      ...departments.map((d) => ({
         value: String(d.department_id),
         label: d.department_name,
       })),
+    ],
     [departments]
   );
 
@@ -99,10 +101,14 @@ export function JobOrderDetailsModal({
     const filtered = deptNum
       ? employees.filter((emp) => emp.user_department === deptNum)
       : employees;
-    const listToUse = filtered.length > 0 ? filtered : employees;
     return [
-      { value: "", label: "Any personnel in target department" },
-      ...listToUse.map((emp) => ({
+      {
+        value: "",
+        label: deptNum
+          ? "Any personnel in department (Department Only)"
+          : "None (Department Only)",
+      },
+      ...filtered.map((emp) => ({
         value: String(emp.user_id),
         label: emp.user_email
           ? `${emp.full_name} (${emp.user_email})`
@@ -189,7 +195,10 @@ export function JobOrderDetailsModal({
                 <div className="text-xs">
                   <p className="text-muted-foreground">Directed To</p>
                   <p className="font-semibold text-foreground">
-                    {jobOrder.target_department_name ?? "Unassigned"}
+                    {jobOrder.target_department_name ??
+                      (jobOrder.target_username
+                        ? "Individual Direct"
+                        : "Unassigned")}
                   </p>
                   {jobOrder.target_username ? (
                     <p className="flex items-center gap-1 text-muted-foreground">

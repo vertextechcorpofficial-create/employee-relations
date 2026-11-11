@@ -128,25 +128,27 @@ export const JobOrderSchema = z.object({
 
 export type JobOrder = z.infer<typeof JobOrderSchema>;
 
-export const CreateJobOrderSchema = z.object({
-  category_id: z.number().int().positive("Please select a service category"),
-  target_department_id: z
-    .number()
-    .int()
-    .positive("Please choose a target department"),
-  target_department_name: z
-    .string()
-    .trim()
-    .min(1, "Target department name is required"),
-  target_user_id: z.number().int().positive().nullable().optional(),
-  target_username: z.string().trim().nullable().optional(),
-  remarks: z
-    .string()
-    .trim()
-    .min(3, "Remarks are required (at least 3 characters)")
-    .max(2000, "Remarks must be 2000 characters or fewer"),
-  attachments: z.array(AttachmentDraftSchema).default([]),
-});
+export const CreateJobOrderSchema = z
+  .object({
+    category_id: z.number().int().positive("Please select a service category"),
+    target_department_id: z.number().int().positive().nullable().optional(),
+    target_department_name: z.string().trim().nullable().optional(),
+    target_user_id: z.number().int().positive().nullable().optional(),
+    target_username: z.string().trim().nullable().optional(),
+    remarks: z
+      .string()
+      .trim()
+      .min(3, "Remarks are required (at least 3 characters)")
+      .max(2000, "Remarks must be 2000 characters or fewer"),
+    attachments: z.array(AttachmentDraftSchema).default([]),
+  })
+  .refine(
+    (data) => Boolean(data.target_department_id || data.target_user_id),
+    {
+      message: "Please choose a target Department, a target Personnel, or both",
+      path: ["target_department_id"],
+    }
+  );
 
 export type CreateJobOrderInput = z.infer<typeof CreateJobOrderSchema>;
 
