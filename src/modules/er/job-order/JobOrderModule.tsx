@@ -9,7 +9,6 @@ import {
   RefreshCw,
   Search,
   Ticket,
-  User,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -188,26 +187,6 @@ export function JobOrderModule() {
             Direct digital service requests to a target department or employee,
             manage categories, and track resolution status.
           </p>
-          {directory.currentUser && (
-            <div className="mt-2.5 inline-flex flex-wrap items-center gap-2 rounded-md border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5 font-medium text-foreground">
-                <User className="h-3.5 w-3.5 text-primary" />
-                {directory.currentUser.username}
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1.5">
-                <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                Assigned Department:
-                <Badge
-                  variant="outline"
-                  className="font-medium text-foreground"
-                >
-                  {directory.currentUser.department_name ??
-                    "No Department Assigned"}
-                </Badge>
-              </span>
-            </div>
-          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -448,7 +427,6 @@ export function JobOrderModule() {
       <CreateJobOrderDialog
         open={isCreateOpen}
         onOpenChange={setIsCreateOpen}
-        currentUser={directory.currentUser}
         categories={categoriesState.categories}
         departments={directory.departments}
         employees={directory.employees}
