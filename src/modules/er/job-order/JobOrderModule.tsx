@@ -275,8 +275,8 @@ export function JobOrderModule() {
         onValueChange={setActiveTab}
         className="space-y-4"
       >
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <TabsList className="w-full justify-start overflow-x-auto xl:w-auto">
+        <div className="flex flex-col gap-3">
+          <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
             <TabsTrigger value="my_requests" className="gap-2">
               <Ticket className="h-4 w-4" />
               My Job Orders
@@ -301,8 +301,8 @@ export function JobOrderModule() {
           </TabsList>
 
           {activeTab !== "categories" && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 sm:w-56 sm:flex-none">
+            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
+              <div className="relative min-w-[200px] max-w-sm flex-1">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={searchQuery}
@@ -316,7 +316,7 @@ export function JobOrderModule() {
                 value={departmentFilter}
                 onValueChange={setDepartmentFilter}
               >
-                <SelectTrigger className="w-[180px] bg-background">
+                <SelectTrigger className="w-[180px] shrink-0 bg-background">
                   <Building2 className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
                   <SelectValue placeholder="All Departments" />
                 </SelectTrigger>
@@ -342,7 +342,7 @@ export function JobOrderModule() {
                       : "outline"
                   }
                   size="sm"
-                  className="h-9 gap-1.5 text-xs"
+                  className="h-9 shrink-0 gap-1.5 whitespace-nowrap text-xs"
                   onClick={() => {
                     const myDeptId = String(
                       directory.currentUser?.department_id
@@ -359,7 +359,7 @@ export function JobOrderModule() {
               )}
 
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px] bg-background">
+                <SelectTrigger className="w-[140px] shrink-0 bg-background">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
                 <SelectContent>
