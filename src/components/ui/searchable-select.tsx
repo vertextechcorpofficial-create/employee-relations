@@ -37,11 +37,34 @@ export function SearchableSelect({
     className,
 }: SearchableSelectProps) {
     const [open, setOpen] = React.useState(false);
+    const containerRef = React.useRef<HTMLDivElement | null>(null);
 
     // Find the label for the current value
     const selectedLabel = React.useMemo(() => {
         return options.find((opt) => opt.value === value)?.label;
     }, [options, value]);
+
+    // Ensure mouse wheel scrolling works reliably when rendered inside modal dialogs
+    React.useEffect(() => {
+        if (!open) return;
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleWheel = (e: WheelEvent) => {
+            const list = container.querySelector<HTMLElement>("[data-slot='command-list']");
+            if (!list) return;
+
+            // Stop modal dialog scroll-lock from intercepting and canceling the wheel event
+            e.stopPropagation();
+            e.preventDefault();
+            list.scrollTop += e.deltaY;
+        };
+
+        container.addEventListener("wheel", handleWheel, { passive: false });
+        return () => {
+            container.removeEventListener("wheel", handleWheel);
+        };
+    }, [open]);
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -58,39 +81,34 @@ export function SearchableSelect({
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                    <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
-                    <CommandList>
-                        <CommandEmpty>No results found.</CommandEmpty>
-                        <CommandGroup>
-                            {options.map((opt) => (
-                                <CommandItem
-                                    key={opt.value}
-                                    value={opt.label} // Use label for searching
-                                    onSelect={() => {
-                                        // We need to map back to the ID/value since CommandItem uses text content or value prop
-                                        // Here we used label as value for search, so we find the option by label and call onValueChange with its value
-                                        // However, simpler is to use the option.value if unique, but Command compares normalized search.
-                                        // Let's stick to using the opt.value if we want precise selection.
-                                        // Re-eval: onSelect returns the value prop (opt.label).
-                                        // Actually, let's use the option value but ensure standard shadcn pattern.
-
-                                        onValueChange(opt.value);
-                                        setOpen(false);
-                                    }}
-                                >
-                                    <Check
-                                        className={cn(
-                                            "mr-2 h-4 w-4",
-                                            value === opt.value ? "opacity-100" : "opacity-0"
-                                        )}
-                                    />
-                                    {opt.label}
-                                </CommandItem>
-                            ))}
-                        </CommandGroup>
-                    </CommandList>
-                </Command>
+                <div ref={containerRef} className="w-full">
+                    <Command>
+                        <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
+                        <CommandList>
+                            <CommandEmpty>No results found.</CommandEmpty>
+                            <CommandGroup>
+                                {options.map((opt) => (
+                                    <CommandItem
+                                        key={opt.value}
+                                        value={opt.label} // Use label for searching
+                                        onSelect={() => {
+                                            onValueChange(opt.value);
+                                            setOpen(false);
+                                        }}
+                                    >
+                                        <Check
+                                            className={cn(
+                                                "mr-2 h-4 w-4",
+                                                value === opt.value ? "opacity-100" : "opacity-0"
+                                            )}
+                                        />
+                                        {opt.label}
+                                    </CommandItem>
+                                ))}
+                            </CommandGroup>
+                        </CommandList>
+                    </Command>
+                </div>
             </PopoverContent>
         </Popover>
     );
