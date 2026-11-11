@@ -193,19 +193,25 @@ export function CreateJobOrderDialog({
   };
 
   const handleFormSubmit = async (values: JobOrderFormValues) => {
-    const deptId =
+    let deptId =
       values.target_department_id && values.target_department_id.trim() !== ""
         ? Number(values.target_department_id)
         : null;
-    const selectedDept = deptId
-      ? departments.find((d) => d.department_id === deptId)
-      : undefined;
     const empId =
       values.target_user_id && values.target_user_id.trim() !== ""
         ? Number(values.target_user_id)
         : null;
     const selectedEmp = empId
       ? employees.find((e) => e.user_id === empId)
+      : undefined;
+
+    // Auto-inherit department from targeted personnel if department was omitted
+    if (!deptId && selectedEmp?.user_department) {
+      deptId = selectedEmp.user_department;
+    }
+
+    const selectedDept = deptId
+      ? departments.find((d) => d.department_id === deptId)
       : undefined;
 
     await onSubmit({
@@ -357,7 +363,25 @@ export function CreateJobOrderDialog({
                         <SearchableSelect
                           options={employeeOptions}
                           value={field.value ?? ""}
-                          onValueChange={field.onChange}
+                          onValueChange={(val) => {
+                            field.onChange(val);
+                            if (val) {
+                              const emp = employees.find(
+                                (e) => String(e.user_id) === val
+                              );
+                              if (emp?.user_department) {
+                                const currentDept = form.getValues(
+                                  "target_department_id"
+                                );
+                                if (!currentDept) {
+                                  form.setValue(
+                                    "target_department_id",
+                                    String(emp.user_department)
+                                  );
+                                }
+                              }
+                            }
+                          }}
                           placeholder="Choose personnel..."
                           disabled={isSubmitting}
                         />

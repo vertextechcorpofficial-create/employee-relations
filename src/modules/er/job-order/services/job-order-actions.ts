@@ -14,7 +14,11 @@ import {
   getManilaIsoDateTime,
   JO_COLLECTIONS,
 } from "@/modules/er/job-order/services/job-order-directus";
-import { fetchJobOrderById } from "@/modules/er/job-order/services/job-order-query";
+import {
+  fetchDepartments,
+  fetchEmployees,
+  fetchJobOrderById,
+} from "@/modules/er/job-order/services/job-order-query";
 
 /**
  * Generates a human-readable digital Job Order reference number (`JO-YYYYMMDD-XXXX`).
@@ -90,11 +94,33 @@ export async function createJobOrder(
   actor: DecoupledActor
 ): Promise<JobOrder> {
   const now = getManilaIsoDateTime();
+
+  let targetDeptId = input.target_department_id ?? null;
+  let targetDeptName = input.target_department_name ?? null;
+
+  // Auto-inherit department if only a personnel was targeted
+  if (!targetDeptId && input.target_user_id) {
+    try {
+      const [employees, departments] = await Promise.all([
+        fetchEmployees(),
+        fetchDepartments(),
+      ]);
+      const emp = employees.find((e) => e.user_id === input.target_user_id);
+      if (emp?.user_department) {
+        targetDeptId = emp.user_department;
+        const dept = departments.find((d) => d.department_id === targetDeptId);
+        targetDeptName = dept?.department_name ?? `Department #${targetDeptId}`;
+      }
+    } catch {
+      // Fallback: retain null if directory resolution is unavailable
+    }
+  }
+
   const requestPayload = {
     jo_number: generateJoNumber(),
     category_id: input.category_id,
-    target_department_id: input.target_department_id ?? null,
-    target_department_name: input.target_department_name ?? null,
+    target_department_id: targetDeptId,
+    target_department_name: targetDeptName,
     target_user_id: input.target_user_id ?? null,
     target_username: input.target_username ?? null,
     remarks: input.remarks,

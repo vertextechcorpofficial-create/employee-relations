@@ -134,14 +134,19 @@ export function JobOrderDetailsModal({
   const handleApplyUpdate = async () => {
     if (!onUpdateJobOrder || !hasChanges) return;
 
-    const deptIdNum = currentDeptId ? Number(currentDeptId) : null;
-    const dept = deptIdNum
-      ? departments.find((d) => d.department_id === deptIdNum)
-      : undefined;
-
+    let deptIdNum = currentDeptId ? Number(currentDeptId) : null;
     const userIdNum = currentUserId ? Number(currentUserId) : null;
     const emp = userIdNum
       ? employees.find((e) => e.user_id === userIdNum)
+      : undefined;
+
+    // Auto-inherit department if assigned to an employee but department was omitted
+    if (!deptIdNum && emp?.user_department) {
+      deptIdNum = emp.user_department;
+    }
+
+    const dept = deptIdNum
+      ? departments.find((d) => d.department_id === deptIdNum)
       : undefined;
 
     await onUpdateJobOrder(jobOrder.id, {
@@ -403,7 +408,17 @@ export function JobOrderDetailsModal({
                       <SearchableSelect
                         options={employeeOptions}
                         value={currentUserId}
-                        onValueChange={(val) => setPendingUserId(val)}
+                        onValueChange={(val) => {
+                          setPendingUserId(val);
+                          if (val && !currentDeptId) {
+                            const emp = employees.find(
+                              (e) => String(e.user_id) === val
+                            );
+                            if (emp?.user_department) {
+                              setPendingDeptId(String(emp.user_department));
+                            }
+                          }
+                        }}
                         placeholder="Any in department..."
                         disabled={isSubmitting}
                       />

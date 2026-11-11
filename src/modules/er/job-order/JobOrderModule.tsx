@@ -126,13 +126,35 @@ export function JobOrderModule() {
 
   const filterList = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const empDeptMap = new Map<number, number>();
+    for (const emp of directory.employees) {
+      if (emp.user_department) {
+        empDeptMap.set(emp.user_id, emp.user_department);
+      }
+    }
+
     return (list: JobOrder[]) =>
       list.filter((jo) => {
         const matchesStatus =
           statusFilter === "ALL" || jo.status === statusFilter;
+
+        const directDeptId =
+          jo.target_department_id !== null &&
+          jo.target_department_id !== undefined
+            ? String(jo.target_department_id)
+            : null;
+        const derivedDeptId =
+          jo.target_user_id !== null && jo.target_user_id !== undefined
+            ? String(empDeptMap.get(jo.target_user_id) ?? "")
+            : null;
+
         const matchesDept =
           departmentFilter === "ALL" ||
-          String(jo.target_department_id ?? "") === departmentFilter;
+          directDeptId === departmentFilter ||
+          (derivedDeptId !== null &&
+            derivedDeptId !== "" &&
+            derivedDeptId === departmentFilter);
+
         const matchesQuery =
           !q ||
           jo.jo_number.toLowerCase().includes(q) ||
@@ -143,7 +165,7 @@ export function JobOrderModule() {
           jo.requester_username.toLowerCase().includes(q);
         return matchesStatus && matchesDept && matchesQuery;
       });
-  }, [searchQuery, statusFilter, departmentFilter]);
+  }, [searchQuery, statusFilter, departmentFilter, directory.employees]);
 
   const filteredMyOrders = useMemo(
     () => filterList(myOrders.jobOrders),
