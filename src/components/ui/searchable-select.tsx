@@ -37,34 +37,72 @@ export function SearchableSelect({
     className,
 }: SearchableSelectProps) {
     const [open, setOpen] = React.useState(false);
-    const containerRef = React.useRef<HTMLDivElement | null>(null);
+    const cleanupRef = React.useRef<(() => void) | null>(null);
 
     // Find the label for the current value
     const selectedLabel = React.useMemo(() => {
         return options.find((opt) => opt.value === value)?.label;
     }, [options, value]);
 
-    // Ensure mouse wheel scrolling works reliably when rendered inside modal dialogs
+    // Cleanup wheel listener on unmount
     React.useEffect(() => {
-        if (!open) return;
-        const container = containerRef.current;
-        if (!container) return;
+        return () => {
+            if (cleanupRef.current) {
+                cleanupRef.current();
+                cleanupRef.current = null;
+            }
+        };
+    }, []);
+
+    // Callback ref attached to the popover content container.
+    // Guarantees immediate attachment upon mounting, eliminating race conditions with portaled dialogs.
+    const setContainerRef = React.useCallback((node: HTMLDivElement | null) => {
+        if (cleanupRef.current) {
+            cleanupRef.current();
+            cleanupRef.current = null;
+        }
+
+        if (!node) return;
 
         const handleWheel = (e: WheelEvent) => {
-            const list = container.querySelector<HTMLElement>("[data-slot='command-list']");
+            const list = node.querySelector<HTMLElement>(
+                "[data-slot='command-list'], [cmdk-list]"
+            );
             if (!list) return;
 
-            // Stop modal dialog scroll-lock from intercepting and canceling the wheel event
+            // Stop event bubbling to document so Radix Dialog's react-remove-scroll
+            // does NOT intercept and cancel (preventDefault) the wheel event
             e.stopPropagation();
+
+            // Normalize delta based on deltaMode (pixels vs lines vs pages).
+            // On Windows mouse wheels, deltaMode is typically 1 (DOM_DELTA_LINE) where deltaY is 3.
+            // Multiplying by line height ensures responsive scrolling instead of microscopic 3px movement.
+            let delta = e.deltaY;
+            if (e.deltaMode === 1) {
+                delta *= 24;
+            } else if (e.deltaMode === 2) {
+                delta *= list.clientHeight;
+            }
+
+            const isScrollingDown = delta > 0;
+            const canScrollDown =
+                isScrollingDown &&
+                list.scrollTop + list.clientHeight < list.scrollHeight - 1;
+            const canScrollUp = !isScrollingDown && list.scrollTop > 1;
+
+            if (canScrollDown || canScrollUp) {
+                list.scrollTop += delta;
+            }
+
+            // Always prevent default when interacting with the popover so background modal/page does not scroll
             e.preventDefault();
-            list.scrollTop += e.deltaY;
         };
 
-        container.addEventListener("wheel", handleWheel, { passive: false });
-        return () => {
-            container.removeEventListener("wheel", handleWheel);
+        node.addEventListener("wheel", handleWheel, { passive: false });
+        cleanupRef.current = () => {
+            node.removeEventListener("wheel", handleWheel);
         };
-    }, [open]);
+    }, []);
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -81,7 +119,7 @@ export function SearchableSelect({
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <div ref={containerRef} className="w-full">
+                <div ref={setContainerRef} className="w-full">
                     <Command>
                         <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
                         <CommandList>
