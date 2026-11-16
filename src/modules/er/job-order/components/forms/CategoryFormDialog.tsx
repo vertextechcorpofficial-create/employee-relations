@@ -80,19 +80,28 @@ export function CategoryFormDialog({
   }, [open, editingCategory, form]);
 
   const handleFormSubmit = async (values: CategoryFormValues) => {
-    await onSubmit(
-      {
-        category_name: values.category_name,
-        description: values.description || null,
-        is_active: values.is_active,
-      },
-      editingCategory?.id
-    );
-    onOpenChange(false);
+    try {
+      await onSubmit(
+        {
+          category_name: values.category_name,
+          description: values.description || null,
+          is_active: values.is_active,
+        },
+        editingCategory?.id
+      );
+      onOpenChange(false);
+    } catch {
+      // Hook handles error toast; keep dialog open so inputs remain intact
+    }
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && isSubmitting) return;
+    onOpenChange(nextOpen);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle>

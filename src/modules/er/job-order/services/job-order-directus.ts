@@ -70,6 +70,7 @@ export async function directusRequest<T>(
 
 /**
  * Formats current Manila timestamp (`YYYY-MM-DDTHH:mm:ss`) for Directus dateTime columns.
+ * Uses `hourCycle: "h23"` so midnight formats as `00` rather than `24`.
  */
 export function getManilaIsoDateTime(): string {
   const now = new Date();
@@ -81,12 +82,92 @@ export function getManilaIsoDateTime(): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(now);
 
   const pick = (type: string): string =>
     parts.find((p) => p.type === type)?.value ?? "00";
 
-  return `${pick("year")}-${pick("month")}-${pick("day")}T${pick("hour")}:${pick("minute")}:${pick("second")}`;
+  const rawHour = pick("hour");
+  const hour = rawHour === "24" ? "00" : rawHour;
+
+  return `${pick("year")}-${pick("month")}-${pick("day")}T${hour}:${pick("minute")}:${pick("second")}`;
+}
+
+/**
+ * Checks whether a Directus file UUID belongs to a Job Order attachment or the `job_order` upload folder.
+ */
+export async function isJobOrderOwnedFile(fileId: string): Promise<boolean> {
+  const attachmentParams = new URLSearchParams({
+    fields: "id",
+    limit: "1",
+  });
+  attachmentParams.set("filter[directus_file_id][_eq]", fileId);
+
+  const attachments = await directusRequest<Array<{ id: number }>>(
+    `/items/${JO_COLLECTIONS.ATTACHMENT}?${attachmentParams.toString()}`
+  );
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    return true;
+  }
+
+  try {
+    const fileMeta = await directusRequest<{
+      id?: string;
+      folder?: { name?: string | null } | string | null;
+    }>(`/files/${encodeURIComponent(fileId)}?fields=id,folder.name`);
+
+    if (
+      fileMeta?.folder &&
+      typeof fileMeta.folder === "object" &&
+      fileMeta.folder.name === JO_UPLOAD_FOLDER
+    ) {
+      return true;
+    }
+
+    const folderRes = await directusRequest<Array<{ id: string }>>(
+      `/folders?filter[name][_eq]=${encodeURIComponent(JO_UPLOAD_FOLDER)}&fields=id&limit=1`
+    );
+    const jobOrderFolderId = Array.isArray(folderRes) ? folderRes[0]?.id : undefined;
+    if (
+      jobOrderFolderId &&
+      typeof fileMeta?.folder === "string" &&
+      fileMeta.folder === jobOrderFolderId
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Deletes an unattached staged file from Directus when removed or canceled before JO submission.
+ * Never deletes files already linked in `iot_jo_attachment`.
+ */
+export async function deleteUnattachedStagedFile(fileId: string): Promise<void> {
+  const attachmentParams = new URLSearchParams({
+    fields: "id",
+    limit: "1",
+  });
+  attachmentParams.set("filter[directus_file_id][_eq]", fileId);
+
+  const linked = await directusRequest<Array<{ id: number }>>(
+    `/items/${JO_COLLECTIONS.ATTACHMENT}?${attachmentParams.toString()}`
+  );
+  if (Array.isArray(linked) && linked.length > 0) {
+    throw new Error("VALIDATION_FAILED: Cannot delete a file already linked to a Job Order");
+  }
+
+  const ownedInFolder = await isJobOrderOwnedFile(fileId);
+  if (!ownedInFolder) {
+    throw new Error("AUTH_DENIED: File does not belong to the Job Order staging folder");
+  }
+
+  await directusRequest<void>(`/files/${encodeURIComponent(fileId)}`, {
+    method: "DELETE",
+  });
 }
 

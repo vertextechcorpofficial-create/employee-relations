@@ -1,39 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  deleteUnattachedStagedFile,
   getDirectusBaseUrl,
   getDirectusHeaders,
   handleJobOrderApiError,
   JO_UPLOAD_FOLDER,
   resolveDecoupledActor,
 } from "@/modules/er/job-order/services";
-import { AttachmentKind } from "@/modules/er/job-order/types/job-order.schema";
+import {
+  AttachmentKind,
+  JO_ALLOWED_FILE_EXTENSIONS,
+  JO_MAX_FILE_BYTES,
+} from "@/modules/er/job-order/types/job-order.schema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
+const ALLOWED_EXTENSIONS = new Set<string>(JO_ALLOWED_FILE_EXTENSIONS);
+const PICTURE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const ALLOWED_EXTENSIONS = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "webp",
-  "gif",
-  "pdf",
-  "doc",
-  "docx",
-  "xls",
-  "xlsx",
-  "csv",
-  "txt",
-]);
+function extractExtension(fileName: string): string {
+  const lastDot = fileName.lastIndexOf(".");
+  if (lastDot <= 0) return "";
+  return fileName.slice(lastDot + 1).toLowerCase().trim();
+}
 
-function inferAttachmentKind(file: File): AttachmentKind {
-  if (file.type.startsWith("image/")) {
-    return "PICTURE";
-  }
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) {
+function inferAttachmentKind(file: File, ext: string): AttachmentKind {
+  if (file.type.startsWith("image/") || PICTURE_EXTENSIONS.has(ext)) {
     return "PICTURE";
   }
   return "DOCUMENT";
@@ -53,14 +48,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       throw new Error("VALIDATION_FAILED: No file provided");
     }
 
-    if (file.size > MAX_FILE_BYTES) {
+    if (file.size > JO_MAX_FILE_BYTES) {
       throw new Error("VALIDATION_FAILED: File size exceeds 10MB limit");
     }
 
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    if (ext && !ALLOWED_EXTENSIONS.has(ext)) {
+    const ext = extractExtension(file.name);
+    if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
       throw new Error(
-        `VALIDATION_FAILED: Unsupported file type ".${ext}". Allowed: images, PDF, Word, Excel, CSV, TXT.`
+        `VALIDATION_FAILED: Unsupported or missing file extension${ext ? ` ".${ext}"` : ""}. Allowed: images, PDF, Word, Excel, CSV, TXT.`
       );
     }
 
@@ -93,7 +88,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       throw new Error("INTERNAL_FAIL: Directus did not return a file ID");
     }
 
-    // Assign uploaded file into the `job_order` Directus folder if it exists
+    // Assign uploaded file into the `job_order` Directus folder
     const folderRes = await fetch(
       `${baseUrl}/folders?filter[name][_eq]=${encodeURIComponent(JO_UPLOAD_FOLDER)}`,
       { headers: getDirectusHeaders(false) }
@@ -102,15 +97,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const folderData = (await folderRes.json()) as { data?: Array<{ id: string }> };
       const folderId = folderData.data?.[0]?.id;
       if (folderId) {
-        await fetch(`${baseUrl}/files/${fileId}`, {
+        const patchRes = await fetch(`${baseUrl}/files/${fileId}`, {
           method: "PATCH",
           headers: getDirectusHeaders(true),
           body: JSON.stringify({ folder: folderId }),
         });
+        if (!patchRes.ok) {
+          console.warn(`[JobOrder] Failed to assign file ${fileId} to folder "${JO_UPLOAD_FOLDER}": HTTP ${patchRes.status}`);
+        }
       }
     }
 
-    const attachmentKind = inferAttachmentKind(file);
+    const attachmentKind = inferAttachmentKind(file, ext);
 
     return NextResponse.json(
       {
@@ -125,6 +123,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       { status: 201 }
     );
+  } catch (error: unknown) {
+    return handleJobOrderApiError(error);
+  }
+}
+
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
+  try {
+    const actor = await resolveDecoupledActor("REQUESTER");
+    if (!actor) {
+      throw new Error("AUTH_DENIED: Authentication required");
+    }
+
+    const fileId = request.nextUrl.searchParams.get("id");
+    if (!fileId || !UUID_PATTERN.test(fileId)) {
+      throw new Error("VALIDATION_FAILED: Valid Directus file ID is required");
+    }
+
+    await deleteUnattachedStagedFile(fileId);
+    return NextResponse.json({ deleted: true }, { status: 200 });
   } catch (error: unknown) {
     return handleJobOrderApiError(error);
   }

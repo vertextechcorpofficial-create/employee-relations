@@ -206,9 +206,11 @@ export function JobOrderTable({
                     <Select
                       value={jo.status}
                       disabled={isSubmitting}
-                      onValueChange={(val) =>
-                        void onStatusChange(jo.id, val as JobOrderStatus)
-                      }
+                      onValueChange={(val) => {
+                        void onStatusChange(jo.id, val as JobOrderStatus).catch(
+                          () => undefined
+                        );
+                      }}
                     >
                       <SelectTrigger className="h-8 w-[135px] bg-background text-xs">
                         <SelectValue />
@@ -235,6 +237,7 @@ export function JobOrderTable({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => onViewDetails(jo)}

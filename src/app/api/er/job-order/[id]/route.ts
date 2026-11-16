@@ -43,6 +43,8 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   try {
+    // Note: Intentionally open to authenticated actors per dual-POV test spec;
+    // enforce receiver department/role authorization here when dedicated receiver RBAC is enabled.
     const actor = await resolveDecoupledActor("RECEIVER");
     if (!actor) {
       throw new Error("AUTH_DENIED: Authentication required");

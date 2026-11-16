@@ -33,6 +33,24 @@ function isUserDeleted(raw: DirectusUserRow["is_deleted"]): boolean {
   return false;
 }
 
+function safeParseList<T>(
+  schema: z.ZodType<T>,
+  rows: unknown,
+  label: string
+): T[] {
+  if (!Array.isArray(rows)) return [];
+  const valid: T[] = [];
+  for (const row of rows) {
+    const parsed = schema.safeParse(row);
+    if (parsed.success) {
+      valid.push(parsed.data);
+    } else {
+      console.warn(`[JobOrder] Skipped malformed ${label} record:`, parsed.error.issues[0]?.message);
+    }
+  }
+  return valid;
+}
+
 /**
  * Fetches all departments from Directus `department` for targeting Job Orders.
  * @returns {Promise<DepartmentOption[]>} Sorted list of departments.
@@ -48,9 +66,7 @@ export async function fetchDepartments(): Promise<DepartmentOption[]> {
     `/items/department?${params.toString()}`
   );
 
-  return z
-    .array(DepartmentOptionSchema)
-    .parse(Array.isArray(raw) ? raw : []);
+  return safeParseList(DepartmentOptionSchema, raw, "department");
 }
 
 /**
@@ -83,7 +99,7 @@ export async function fetchEmployees(): Promise<EmployeeOption[]> {
       };
     });
 
-  return z.array(EmployeeOptionSchema).parse(mapped);
+  return safeParseList(EmployeeOptionSchema, mapped, "employee");
 }
 
 /**
@@ -107,7 +123,38 @@ export async function fetchServiceCategories(
     `/items/${JO_COLLECTIONS.CATEGORY}?${params.toString()}`
   );
 
-  return z.array(ServiceCategorySchema).parse(Array.isArray(raw) ? raw : []);
+  return safeParseList(ServiceCategorySchema, raw, "service_category");
+}
+
+const ATTACHMENT_CHUNK_SIZE = 100;
+
+/**
+ * Fetches Job Order attachments in bounded ID chunks to prevent HTTP 414 URI Too Long errors.
+ */
+async function fetchAttachmentsByJoIds(joIds: number[]): Promise<JobOrderAttachment[]> {
+  if (joIds.length === 0) return [];
+
+  const chunks: number[][] = [];
+  for (let i = 0; i < joIds.length; i += ATTACHMENT_CHUNK_SIZE) {
+    chunks.push(joIds.slice(i, i + ATTACHMENT_CHUNK_SIZE));
+  }
+
+  const chunkResults = await Promise.all(
+    chunks.map(async (chunkIds) => {
+      const params = new URLSearchParams({
+        limit: "-1",
+        sort: "id",
+      });
+      params.set("filter[jo_id][_in]", chunkIds.join(","));
+
+      const raw = await directusRequest<unknown[]>(
+        `/items/${JO_COLLECTIONS.ATTACHMENT}?${params.toString()}`
+      );
+      return safeParseList(JobOrderAttachmentSchema, raw, "attachment");
+    })
+  );
+
+  return chunkResults.flat();
 }
 
 /**
@@ -118,26 +165,15 @@ async function hydrateJobOrders(rawOrders: JobOrder[]): Promise<JobOrder[]> {
   if (rawOrders.length === 0) return [];
 
   const joIds = rawOrders.map((order) => order.id);
-  const attachmentParams = new URLSearchParams({
-    limit: "-1",
-    sort: "id",
-  });
-  attachmentParams.set("filter[jo_id][_in]", joIds.join(","));
 
-  const [categories, rawAttachments] = await Promise.all([
+  const [categories, attachments] = await Promise.all([
     fetchServiceCategories(false),
-    directusRequest<unknown[]>(
-      `/items/${JO_COLLECTIONS.ATTACHMENT}?${attachmentParams.toString()}`
-    ),
+    fetchAttachmentsByJoIds(joIds),
   ]);
 
   const categoryMap = new Map<number, string>(
     categories.map((cat) => [cat.id, cat.category_name])
   );
-
-  const attachments = z
-    .array(JobOrderAttachmentSchema)
-    .parse(Array.isArray(rawAttachments) ? rawAttachments : []);
 
   const attachmentsByJoId = new Map<number, JobOrderAttachment[]>();
   for (const att of attachments) {
@@ -181,9 +217,7 @@ export async function fetchJobOrders(
     `/items/${JO_COLLECTIONS.REQUEST}?${params.toString()}`
   );
 
-  const validated = z
-    .array(JobOrderSchema)
-    .parse(Array.isArray(raw) ? raw : []);
+  const validated = safeParseList(JobOrderSchema, raw, "job_order");
 
   return hydrateJobOrders(validated);
 }

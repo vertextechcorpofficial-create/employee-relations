@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  AlertCircle,
   Building2,
   FolderCog,
   Inbox,
@@ -29,6 +30,7 @@ import { CategoryFormDialog } from "@/modules/er/job-order/components/forms/Cate
 import { CreateJobOrderDialog } from "@/modules/er/job-order/components/forms/CreateJobOrderDialog";
 import { JobOrderDetailsModal } from "@/modules/er/job-order/components/modals/JobOrderDetailsModal";
 import { useJobOrderDirectory } from "@/modules/er/job-order/hooks/useJobOrderDirectory";
+import { useJobOrderUpload } from "@/modules/er/job-order/hooks/useJobOrderUpload";
 import { useJobOrders } from "@/modules/er/job-order/hooks/useJobOrders";
 import { useServiceCategories } from "@/modules/er/job-order/hooks/useServiceCategories";
 import {
@@ -47,8 +49,8 @@ import {
  * (department filter + direct status updates without acknowledgement), and Service Categories.
  */
 export function JobOrderModule() {
-  const myOrders = useJobOrders("my");
-  const receiverOrders = useJobOrders("all");
+  const jobOrdersState = useJobOrders("all");
+  const uploadState = useJobOrderUpload();
   const categoriesState = useServiceCategories();
   const directory = useJobOrderDirectory();
 
@@ -70,40 +72,36 @@ export function JobOrderModule() {
 
   const handleRefreshAll = async () => {
     await Promise.all([
-      myOrders.refresh(),
-      receiverOrders.refresh(),
+      jobOrdersState.refresh(),
       categoriesState.refresh(),
       directory.refresh(),
     ]);
   };
 
   const handleCreateJobOrder = async (payload: CreateJobOrderInput) => {
-    await myOrders.submitJobOrder(payload);
-    await receiverOrders.refresh();
+    await jobOrdersState.submitJobOrder(payload);
   };
 
   const handleInlineStatusChange = async (
     joId: number,
     nextStatus: JobOrderStatus
   ) => {
-    const updated = await receiverOrders.updateJobOrder(joId, {
+    const updated = await jobOrdersState.updateJobOrder(joId, {
       status: nextStatus,
     });
     if (selectedJobOrder?.id === joId) {
       setSelectedJobOrder(updated);
     }
-    await myOrders.refresh();
   };
 
   const handleModalUpdateJobOrder = async (
     joId: number,
     payload: UpdateJobOrderInput
   ) => {
-    const updated = await receiverOrders.updateJobOrder(joId, payload);
+    const updated = await jobOrdersState.updateJobOrder(joId, payload);
     if (selectedJobOrder?.id === joId) {
       setSelectedJobOrder(updated);
     }
-    await myOrders.refresh();
   };
 
   const handleSaveCategory = async (
@@ -167,31 +165,38 @@ export function JobOrderModule() {
       });
   }, [searchQuery, statusFilter, departmentFilter, directory.employees]);
 
+  const myOrdersRaw = useMemo(() => {
+    const uid = directory.currentUser?.user_id;
+    if (!uid) return [];
+    return jobOrdersState.jobOrders.filter((jo) => jo.requester_user_id === uid);
+  }, [jobOrdersState.jobOrders, directory.currentUser?.user_id]);
+
   const filteredMyOrders = useMemo(
-    () => filterList(myOrders.jobOrders),
-    [filterList, myOrders.jobOrders]
+    () => filterList(myOrdersRaw),
+    [filterList, myOrdersRaw]
   );
 
   const filteredReceiverOrders = useMemo(
-    () => filterList(receiverOrders.jobOrders),
-    [filterList, receiverOrders.jobOrders]
+    () => filterList(jobOrdersState.jobOrders),
+    [filterList, jobOrdersState.jobOrders]
   );
 
   const stats = useMemo(() => {
-    const all = filteredReceiverOrders;
+    const activeOrders =
+      activeTab === "my_requests" ? filteredMyOrders : filteredReceiverOrders;
     return {
-      total: all.length,
-      open: all.filter((j) => j.status === "Open").length,
-      inProgress: all.filter((j) => j.status === "In Progress").length,
-      resolved: all.filter((j) => j.status === "Resolved").length,
+      total: activeOrders.length,
+      open: activeOrders.filter((j) => j.status === "Open").length,
+      inProgress: activeOrders.filter((j) => j.status === "In Progress").length,
+      resolved: activeOrders.filter((j) => j.status === "Resolved").length,
     };
-  }, [filteredReceiverOrders]);
+  }, [activeTab, filteredMyOrders, filteredReceiverOrders]);
 
-  if (myOrders.error && receiverOrders.error && categoriesState.error) {
+  if (jobOrdersState.error && categoriesState.error) {
     return (
       <ErrorPage
         title="Unable to load Job Order module"
-        message={myOrders.error}
+        message={jobOrdersState.error}
         onRefresh={() => void handleRefreshAll()}
       />
     );
@@ -213,15 +218,17 @@ export function JobOrderModule() {
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
+            type="button"
             variant="outline"
             size="sm"
             onClick={() => void handleRefreshAll()}
-            disabled={myOrders.isLoading || receiverOrders.isLoading}
+            disabled={jobOrdersState.isLoading || directory.isLoading}
           >
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
           <Button
+            type="button"
             variant="outline"
             size="sm"
             onClick={() => {
@@ -232,19 +239,48 @@ export function JobOrderModule() {
             <FolderCog className="mr-2 h-4 w-4" />
             Register Category
           </Button>
-          <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setIsCreateOpen(true)}
+          >
             <Plus className="mr-2 h-4 w-4" />
             New Job Order
           </Button>
         </div>
       </div>
 
+      {directory.error && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              Unable to load departments and personnel directory: {directory.error}
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void directory.refresh()}
+            className="h-8 border-destructive/40 text-destructive hover:bg-destructive/10"
+          >
+            Retry Directory
+          </Button>
+        </div>
+      )}
+
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Total Job Orders
+              {activeTab === "my_requests"
+                ? "My Job Orders"
+                : "Total Job Orders"}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -345,6 +381,9 @@ export function JobOrderModule() {
               <div className="relative w-44 lg:w-56 shrink-0">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
+                  type="search"
+                  spellCheck={false}
+                  aria-label="Search Job Orders"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search JO #..."
@@ -380,6 +419,7 @@ export function JobOrderModule() {
 
               {directory.currentUser?.department_id && (
                 <Button
+                  type="button"
                   variant={
                     departmentFilter ===
                     String(directory.currentUser.department_id)
@@ -424,7 +464,7 @@ export function JobOrderModule() {
         <TabsContent value="my_requests" className="space-y-4">
           <JobOrderTable
             jobOrders={filteredMyOrders}
-            isLoading={myOrders.isLoading}
+            isLoading={jobOrdersState.isLoading || directory.isLoading}
             isReceiverMode={false}
             onViewDetails={(jo) => {
               setSelectedJobOrder(jo);
@@ -438,8 +478,8 @@ export function JobOrderModule() {
         <TabsContent value="receiver_queue" className="space-y-4">
           <JobOrderTable
             jobOrders={filteredReceiverOrders}
-            isLoading={receiverOrders.isLoading}
-            isSubmitting={receiverOrders.isSubmitting}
+            isLoading={jobOrdersState.isLoading}
+            isSubmitting={jobOrdersState.isSubmitting}
             isReceiverMode={true}
             onViewDetails={(jo) => {
               setSelectedJobOrder(jo);
@@ -475,8 +515,9 @@ export function JobOrderModule() {
         categories={categoriesState.categories}
         departments={directory.departments}
         employees={directory.employees}
-        isSubmitting={myOrders.isSubmitting}
-        onUploadFile={myOrders.uploadAttachment}
+        isSubmitting={jobOrdersState.isSubmitting}
+        onUploadFile={uploadState.uploadAttachment}
+        onRemoveStagedFile={uploadState.removeStagedAttachment}
         onSubmit={handleCreateJobOrder}
         onOpenRegisterCategory={() => {
           setEditingCategory(null);
@@ -494,13 +535,14 @@ export function JobOrderModule() {
       />
 
       <JobOrderDetailsModal
+        key={selectedJobOrder?.id ?? "none"}
         jobOrder={selectedJobOrder}
         open={isDetailsOpen}
         onOpenChange={setIsDetailsOpen}
         departments={directory.departments}
         employees={directory.employees}
         isReceiverMode={activeTab === "receiver_queue"}
-        isSubmitting={receiverOrders.isSubmitting}
+        isSubmitting={jobOrdersState.isSubmitting}
         onUpdateJobOrder={handleModalUpdateJobOrder}
       />
     </div>

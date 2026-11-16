@@ -61,6 +61,11 @@ export async function resolveDecoupledActor(
   }
 
   const payload = decodeJwtPayload(token);
+  const exp = payload?.exp;
+  if (typeof exp === "number" && Number.isFinite(exp) && exp * 1000 <= Date.now()) {
+    return isAuthDisabled ? HARDCODED_FALLBACKS[roleContext] : null;
+  }
+
   const userId = pickPositiveInt(payload, ["user_id", "userId", "id", "sub"]);
 
   if (!userId) {

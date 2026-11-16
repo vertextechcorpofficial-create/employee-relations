@@ -21,7 +21,9 @@ export {
 export { handleJobOrderApiError } from "@/modules/er/job-order/services/job-order-api-error";
 
 export {
+  deleteUnattachedStagedFile,
   getDirectusBaseUrl,
   getDirectusHeaders,
+  isJobOrderOwnedFile,
   JO_UPLOAD_FOLDER,
 } from "@/modules/er/job-order/services/job-order-directus";

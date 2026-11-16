@@ -130,9 +130,10 @@ export function JobOrderDetailsModal({
     currentStatus !== jobOrder.status ||
     currentDeptId !== String(jobOrder.target_department_id ?? "") ||
     currentUserId !== String(jobOrder.target_user_id ?? "");
+  const isTargetMissing = !currentDeptId && !currentUserId;
 
   const handleApplyUpdate = async () => {
-    if (!onUpdateJobOrder || !hasChanges) return;
+    if (!onUpdateJobOrder || !hasChanges || isTargetMissing) return;
 
     let deptIdNum = currentDeptId ? Number(currentDeptId) : null;
     const userIdNum = currentUserId ? Number(currentUserId) : null;
@@ -148,22 +149,32 @@ export function JobOrderDetailsModal({
     const dept = deptIdNum
       ? departments.find((d) => d.department_id === deptIdNum)
       : undefined;
+    const resolvedDeptName = deptIdNum
+      ? dept?.department_name ??
+        (deptIdNum === jobOrder.target_department_id
+          ? jobOrder.target_department_name ?? null
+          : null)
+      : null;
 
-    await onUpdateJobOrder(jobOrder.id, {
-      status: currentStatus,
-      target_department_id: deptIdNum,
-      target_department_name:
-        dept?.department_name ?? jobOrder.target_department_name ?? null,
-      target_user_id: userIdNum,
-      target_username: emp?.full_name ?? null,
-    });
+    try {
+      await onUpdateJobOrder(jobOrder.id, {
+        status: currentStatus,
+        target_department_id: deptIdNum,
+        target_department_name: resolvedDeptName,
+        target_user_id: userIdNum,
+        target_username: emp?.full_name ?? null,
+      });
 
-    setPendingStatus(null);
-    setPendingDeptId(null);
-    setPendingUserId(null);
+      setPendingStatus(null);
+      setPendingDeptId(null);
+      setPendingUserId(null);
+    } catch {
+      // Hook displays toast notification; preserve pending edits for retry
+    }
   };
 
   const handleClose = (nextOpen: boolean) => {
+    if (!nextOpen && isSubmitting) return;
     if (!nextOpen) {
       setPendingStatus(null);
       setPendingDeptId(null);
@@ -395,7 +406,17 @@ export function JobOrderDetailsModal({
                         value={currentDeptId}
                         onValueChange={(val) => {
                           setPendingDeptId(val);
-                          setPendingUserId("");
+                          if (val && currentUserId) {
+                            const emp = employees.find(
+                              (e) => String(e.user_id) === currentUserId
+                            );
+                            if (
+                              emp?.user_department &&
+                              String(emp.user_department) !== val
+                            ) {
+                              setPendingUserId("");
+                            }
+                          }
                         }}
                         placeholder="Choose department..."
                         disabled={isSubmitting}
@@ -425,6 +446,12 @@ export function JobOrderDetailsModal({
                     </div>
                   </div>
 
+                  {isTargetMissing && (
+                    <p className="text-xs text-destructive">
+                      Select a Target Department, Assigned Employee, or both.
+                    </p>
+                  )}
+
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <Select
                       value={currentStatus}
@@ -446,8 +473,9 @@ export function JobOrderDetailsModal({
                     </Select>
 
                     <Button
+                      type="button"
                       onClick={() => void handleApplyUpdate()}
-                      disabled={isSubmitting || !hasChanges}
+                      disabled={isSubmitting || !hasChanges || isTargetMissing}
                     >
                       {isSubmitting && (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />

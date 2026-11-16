@@ -104,9 +104,11 @@ export function CategoryTable({
                     <Switch
                       checked={cat.is_active}
                       disabled={isSubmitting}
-                      onCheckedChange={(checked) =>
-                        void onToggleActive(cat, checked)
-                      }
+                      onCheckedChange={(checked) => {
+                        void onToggleActive(cat, checked).catch(
+                          () => undefined
+                        );
+                      }}
                       aria-label={`Toggle ${cat.category_name} active state`}
                     />
                     <StatusBadge tone={cat.is_active ? "success" : "neutral"}>
@@ -121,6 +123,7 @@ export function CategoryTable({
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => onEdit(cat)}

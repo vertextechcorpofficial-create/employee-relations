@@ -18,12 +18,41 @@ export const ATTACHMENT_KIND_VALUES = ["PICTURE", "DOCUMENT"] as const;
 export const AttachmentKindEnum = z.enum(ATTACHMENT_KIND_VALUES);
 export type AttachmentKind = z.infer<typeof AttachmentKindEnum>;
 
+export const JO_MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
+export const JO_ALLOWED_FILE_EXTENSIONS = [
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "gif",
+  "pdf",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "csv",
+  "txt",
+] as const;
+
 /**
- * Coerces Directus tinyint/boolean flags (0/1 or true/false) into boolean.
+ * Coerces Directus tinyint/boolean/Buffer flags (`0`/`1`, `true`/`false`, `{ data: [1] }`) into boolean.
  */
 const booleanFlagSchema = z
-  .union([z.boolean(), z.number()])
-  .transform((val) => (typeof val === "number" ? val === 1 : val));
+  .union([
+    z.boolean(),
+    z.number(),
+    z.null(),
+    z.undefined(),
+    z.object({ data: z.array(z.number()) }),
+  ])
+  .transform((val) => {
+    if (typeof val === "boolean") return val;
+    if (typeof val === "number") return val === 1;
+    if (val && typeof val === "object" && Array.isArray(val.data)) {
+      return val.data[0] === 1;
+    }
+    return true;
+  });
 
 /**
  * Target Department option sourced from Directus `department`.
@@ -74,7 +103,14 @@ export const CreateServiceCategorySchema = z.object({
 
 export type CreateServiceCategoryInput = z.infer<typeof CreateServiceCategorySchema>;
 
-export const UpdateServiceCategorySchema = CreateServiceCategorySchema.partial();
+export const UpdateServiceCategorySchema =
+  CreateServiceCategorySchema.partial().refine(
+    (data) =>
+      data.category_name !== undefined ||
+      data.description !== undefined ||
+      data.is_active !== undefined,
+    { message: "At least one category field must be provided" }
+  );
 export type UpdateServiceCategoryInput = z.infer<typeof UpdateServiceCategorySchema>;
 
 /**
@@ -111,10 +147,18 @@ export const JobOrderSchema = z.object({
   jo_number: z.string().min(1),
   category_id: z.number(),
   category_name: z.string().optional(),
-  remarks: z.string().min(1),
+  remarks: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((val) => val ?? ""),
   status: JobOrderStatusEnum.default("Open"),
   requester_user_id: z.number(),
-  requester_username: z.string().min(1),
+  requester_username: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((val) => (val && val.trim() ? val : "Unknown Requester")),
   receiver_user_id: z.number().nullable().optional(),
   receiver_username: z.string().nullable().optional(),
   target_department_id: z.number().nullable().optional(),
@@ -162,8 +206,18 @@ export const UpdateJobOrderSchema = z
   })
   .refine(
     (data) =>
-      data.status !== undefined || data.target_department_id !== undefined,
+      data.status !== undefined ||
+      data.target_department_id !== undefined ||
+      data.target_user_id !== undefined,
     { message: "Either status or target routing must be provided" }
+  )
+  .refine(
+    (data) =>
+      !(data.target_department_id === null && data.target_user_id === null),
+    {
+      message: "Target Department and Target Personnel cannot both be cleared",
+      path: ["target_department_id"],
+    }
   );
 
 export type UpdateJobOrderInput = z.infer<typeof UpdateJobOrderSchema>;

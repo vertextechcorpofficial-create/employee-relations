@@ -118,18 +118,18 @@ export function DialogSearchableSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "w-full justify-between",
+            "w-full min-w-0 justify-between",
             !value && "text-muted-foreground",
             className
           )}
           disabled={disabled}
         >
-          {selectedLabel || placeholder}
+          <span className="truncate">{selectedLabel || placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[--radix-popover-trigger-width] p-0"
+        className="w-(--radix-popover-trigger-width) p-0"
         align="start"
       >
         <div ref={setContainerRef} className="w-full">
@@ -143,7 +143,8 @@ export function DialogSearchableSelect({
                 {options.map((opt) => (
                   <CommandItem
                     key={opt.value}
-                    value={opt.label}
+                    value={`${opt.label}::${opt.value}`}
+                    keywords={[opt.label]}
                     onSelect={() => {
                       onValueChange(opt.value);
                       setOpen(false);

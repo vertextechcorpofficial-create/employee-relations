@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   CurrentUserDirectory,
   DepartmentOption,
@@ -46,6 +47,7 @@ export function useJobOrderDirectory() {
       const msg =
         err instanceof Error ? err.message : "Failed to load directory";
       setError(msg);
+      toast.error("Directory Error", { description: msg });
     } finally {
       setIsLoading(false);
     }

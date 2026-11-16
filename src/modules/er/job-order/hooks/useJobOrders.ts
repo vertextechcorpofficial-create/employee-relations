@@ -1,13 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import imageCompression from "browser-image-compression";
 import { toast } from "sonner";
 import {
   CreateJobOrderInput,
   JobOrder,
   UpdateJobOrderInput,
-  UploadedJobOrderFile,
 } from "@/modules/er/job-order/types/job-order.schema";
 
 async function parseApiError(res: Response, fallback: string): Promise<string> {
@@ -20,8 +18,8 @@ async function parseApiError(res: Response, fallback: string): Promise<string> {
 }
 
 /**
- * Manages Job Order fetching, submission, attachment uploading, and status/routing updates.
- * @param {"my" | "all"} scope - Filters either requester-owned JOs or all receiver queue JOs.
+ * Manages Job Order fetching, submission, and status/routing updates.
+ * @param {"my" | "all"} scope - Filters requester-owned JOs or all JOs.
  */
 export function useJobOrders(scope: "my" | "all" = "all") {
   const [jobOrders, setJobOrders] = useState<JobOrder[]>([]);
@@ -55,37 +53,6 @@ export function useJobOrders(scope: "my" | "all" = "all") {
     void refresh();
   }, [refresh]);
 
-  const uploadAttachment = useCallback(
-    async (rawFile: File): Promise<UploadedJobOrderFile> => {
-      let fileToUpload = rawFile;
-      if (rawFile.type.startsWith("image/") && rawFile.size > 1024 * 1024) {
-        fileToUpload = await imageCompression(rawFile, {
-          maxSizeMB: 1.5,
-          maxWidthOrHeight: 1920,
-          useWebWorker: true,
-        });
-      }
-
-      const formData = new FormData();
-      formData.append("file", fileToUpload, rawFile.name);
-
-      const res = await fetch("/api/er/job-order/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        throw new Error(
-          await parseApiError(res, `Failed to upload "${rawFile.name}"`)
-        );
-      }
-
-      const json = (await res.json()) as { data: UploadedJobOrderFile };
-      return json.data;
-    },
-    []
-  );
-
   const submitJobOrder = useCallback(
     async (input: CreateJobOrderInput): Promise<JobOrder> => {
       setIsSubmitting(true);
@@ -103,7 +70,7 @@ export function useJobOrders(scope: "my" | "all" = "all") {
         const json = (await res.json()) as { data: JobOrder };
         setJobOrders((prev) => [json.data, ...prev]);
         toast.success("Job Order Submitted", {
-          description: `${json.data.jo_number} directed to ${json.data.target_department_name ?? "Receiver"}.`,
+          description: `${json.data.jo_number} directed to ${json.data.target_department_name ?? json.data.target_username ?? "Receiver"}.`,
         });
         return json.data;
       } catch (err: unknown) {
@@ -161,7 +128,6 @@ export function useJobOrders(scope: "my" | "all" = "all") {
     isSubmitting,
     error,
     refresh,
-    uploadAttachment,
     submitJobOrder,
     updateJobOrder,
   };

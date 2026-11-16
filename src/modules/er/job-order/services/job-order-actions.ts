@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import {
   CreateJobOrderInput,
   CreateServiceCategoryInput,
@@ -18,14 +19,15 @@ import {
   fetchDepartments,
   fetchEmployees,
   fetchJobOrderById,
+  fetchServiceCategories,
 } from "@/modules/er/job-order/services/job-order-query";
 
 /**
- * Generates a human-readable digital Job Order reference number (`JO-YYYYMMDD-XXXX`).
+ * Generates a collision-resistant digital Job Order reference number (`JO-YYYYMMDD-XXXXXX`).
  */
 function generateJoNumber(): string {
   const datePart = getManilaIsoDateTime().slice(0, 10).replace(/-/g, "");
-  const suffix = String(Math.floor(1000 + Math.random() * 9000));
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
   return `JO-${datePart}-${suffix}`;
 }
 
@@ -81,6 +83,63 @@ export async function updateServiceCategory(
   return ServiceCategorySchema.parse(updated);
 }
 
+async function resolveTargetRouting(
+  targetDeptId: number | null,
+  targetDeptName: string | null,
+  targetUserId: number | null,
+  targetUsername: string | null
+): Promise<{
+  target_department_id: number | null;
+  target_department_name: string | null;
+  target_user_id: number | null;
+  target_username: string | null;
+}> {
+  let deptId = targetDeptId;
+  let deptName = deptId !== null ? targetDeptName : null;
+  let username = targetUserId !== null ? targetUsername : null;
+
+  const needsLookup =
+    (deptId === null && targetUserId !== null) ||
+    (deptId !== null && !deptName) ||
+    (targetUserId !== null && !username);
+
+  if (needsLookup) {
+    try {
+      const [employees, departments] = await Promise.all([
+        fetchEmployees(),
+        fetchDepartments(),
+      ]);
+      const emp =
+        targetUserId !== null
+          ? employees.find((e) => e.user_id === targetUserId)
+          : undefined;
+
+      if (emp) {
+        if (!username) {
+          username = emp.full_name;
+        }
+        if (deptId === null && emp.user_department) {
+          deptId = emp.user_department;
+        }
+      }
+
+      if (deptId !== null && !deptName) {
+        const dept = departments.find((d) => d.department_id === deptId);
+        deptName = dept?.department_name ?? `Department #${deptId}`;
+      }
+    } catch {
+      // Fallback: keep already supplied routing values if directory lookup is unavailable
+    }
+  }
+
+  return {
+    target_department_id: deptId,
+    target_department_name: deptId !== null ? deptName : null,
+    target_user_id: targetUserId,
+    target_username: targetUserId !== null ? username : null,
+  };
+}
+
 /**
  * Submits a new digital Job Order directed to a target department (and optional person),
  * and links uploaded picture/document attachments.
@@ -93,36 +152,27 @@ export async function createJobOrder(
   input: CreateJobOrderInput,
   actor: DecoupledActor
 ): Promise<JobOrder> {
-  const now = getManilaIsoDateTime();
-
-  let targetDeptId = input.target_department_id ?? null;
-  let targetDeptName = input.target_department_name ?? null;
-
-  // Auto-inherit department if only a personnel was targeted
-  if (!targetDeptId && input.target_user_id) {
-    try {
-      const [employees, departments] = await Promise.all([
-        fetchEmployees(),
-        fetchDepartments(),
-      ]);
-      const emp = employees.find((e) => e.user_id === input.target_user_id);
-      if (emp?.user_department) {
-        targetDeptId = emp.user_department;
-        const dept = departments.find((d) => d.department_id === targetDeptId);
-        targetDeptName = dept?.department_name ?? `Department #${targetDeptId}`;
-      }
-    } catch {
-      // Fallback: retain null if directory resolution is unavailable
-    }
+  const categories = await fetchServiceCategories(false);
+  const selectedCategory = categories.find((cat) => cat.id === input.category_id);
+  if (!selectedCategory) {
+    throw new Error("VALIDATION_FAILED: Selected service category does not exist");
   }
+  if (!selectedCategory.is_active) {
+    throw new Error("VALIDATION_FAILED: Selected service category is inactive");
+  }
+
+  const now = getManilaIsoDateTime();
+  const routing = await resolveTargetRouting(
+    input.target_department_id ?? null,
+    input.target_department_name ?? null,
+    input.target_user_id ?? null,
+    input.target_username ?? null
+  );
 
   const requestPayload = {
     jo_number: generateJoNumber(),
     category_id: input.category_id,
-    target_department_id: targetDeptId,
-    target_department_name: targetDeptName,
-    target_user_id: input.target_user_id ?? null,
-    target_username: input.target_username ?? null,
+    ...routing,
     remarks: input.remarks,
     status: "Open",
     requester_user_id: actor.userId,
@@ -151,10 +201,23 @@ export async function createJobOrder(
       uploaded_at: now,
     }));
 
-    await directusRequest<unknown>(`/items/${JO_COLLECTIONS.ATTACHMENT}`, {
-      method: "POST",
-      body: JSON.stringify(attachmentRows),
-    });
+    try {
+      await directusRequest<unknown>(`/items/${JO_COLLECTIONS.ATTACHMENT}`, {
+        method: "POST",
+        body: JSON.stringify(attachmentRows),
+      });
+    } catch (attachmentError: unknown) {
+      // Compensate to prevent orphaned JO records when attachment linking fails
+      try {
+        await directusRequest<void>(
+          `/items/${JO_COLLECTIONS.REQUEST}/${created.id}`,
+          { method: "DELETE" }
+        );
+      } catch (rollbackError: unknown) {
+        console.error("[JobOrder] Rollback after attachment error failed:", rollbackError);
+      }
+      throw attachmentError;
+    }
   }
 
   return fetchJobOrderById(created.id);
@@ -173,7 +236,13 @@ export async function updateJobOrder(
   input: UpdateJobOrderInput,
   actor: DecoupledActor
 ): Promise<JobOrder> {
+  const existing = await fetchJobOrderById(joId);
   const now = getManilaIsoDateTime();
+
+  const hasRoutingChange =
+    input.target_department_id !== undefined ||
+    input.target_user_id !== undefined;
+
   const patchPayload: Record<string, unknown> = {
     receiver_user_id: actor.userId,
     receiver_username: actor.username,
@@ -183,13 +252,38 @@ export async function updateJobOrder(
   if (input.status !== undefined) {
     patchPayload.status = input.status;
   }
-  if (input.target_department_id !== undefined) {
-    patchPayload.target_department_id = input.target_department_id;
-    patchPayload.target_department_name = input.target_department_name ?? null;
-  }
-  if (input.target_user_id !== undefined) {
-    patchPayload.target_user_id = input.target_user_id;
-    patchPayload.target_username = input.target_username ?? null;
+
+  if (hasRoutingChange) {
+    const nextDeptId =
+      input.target_department_id !== undefined
+        ? input.target_department_id
+        : (existing.target_department_id ?? null);
+    const nextDeptName =
+      input.target_department_id !== undefined
+        ? (input.target_department_name ?? null)
+        : (existing.target_department_name ?? null);
+    const nextUserId =
+      input.target_user_id !== undefined
+        ? input.target_user_id
+        : (existing.target_user_id ?? null);
+    const nextUsername =
+      input.target_user_id !== undefined
+        ? (input.target_username ?? null)
+        : (existing.target_username ?? null);
+
+    if (nextDeptId === null && nextUserId === null) {
+      throw new Error(
+        "VALIDATION_FAILED: A Job Order must target a Department, a Personnel, or both"
+      );
+    }
+
+    const resolved = await resolveTargetRouting(
+      nextDeptId,
+      nextDeptName,
+      nextUserId,
+      nextUsername
+    );
+    Object.assign(patchPayload, resolved);
   }
 
   await directusRequest<unknown>(`/items/${JO_COLLECTIONS.REQUEST}/${joId}`, {

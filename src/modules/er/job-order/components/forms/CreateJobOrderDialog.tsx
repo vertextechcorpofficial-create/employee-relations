@@ -86,6 +86,7 @@ interface CreateJobOrderDialogProps {
   employees: EmployeeOption[];
   isSubmitting: boolean;
   onUploadFile: (file: File) => Promise<UploadedJobOrderFile>;
+  onRemoveStagedFile?: (fileId: string) => Promise<void>;
   onSubmit: (payload: CreateJobOrderInput) => Promise<void>;
   onOpenRegisterCategory: () => void;
 }
@@ -102,6 +103,7 @@ export function CreateJobOrderDialog({
   employees,
   isSubmitting,
   onUploadFile,
+  onRemoveStagedFile,
   onSubmit,
   onOpenRegisterCategory,
 }: CreateJobOrderDialogProps) {
@@ -190,6 +192,7 @@ export function CreateJobOrderDialog({
 
   const handleRemoveFile = (fileId: string) => {
     setUploadedFiles((prev) => prev.filter((f) => f.file_id !== fileId));
+    void onRemoveStagedFile?.(fileId);
   };
 
   const handleFormSubmit = async (values: JobOrderFormValues) => {
@@ -214,28 +217,37 @@ export function CreateJobOrderDialog({
       ? departments.find((d) => d.department_id === deptId)
       : undefined;
 
-    await onSubmit({
-      category_id: Number(values.category_id),
-      target_department_id: deptId,
-      target_department_name: selectedDept?.department_name ?? null,
-      target_user_id: empId,
-      target_username: selectedEmp?.full_name ?? null,
-      remarks: values.remarks,
-      attachments: uploadedFiles.map((file) => ({
-        directus_file_id: file.file_id,
-        file_name: file.file_name,
-        file_type: file.file_type,
-        attachment_kind: file.attachment_kind,
-      })),
-    });
+    try {
+      await onSubmit({
+        category_id: Number(values.category_id),
+        target_department_id: deptId,
+        target_department_name: selectedDept?.department_name ?? null,
+        target_user_id: empId,
+        target_username: selectedEmp?.full_name ?? null,
+        remarks: values.remarks,
+        attachments: uploadedFiles.map((file) => ({
+          directus_file_id: file.file_id,
+          file_name: file.file_name,
+          file_type: file.file_type,
+          attachment_kind: file.attachment_kind,
+        })),
+      });
 
-    form.reset();
-    setUploadedFiles([]);
-    onOpenChange(false);
+      form.reset();
+      setUploadedFiles([]);
+      onOpenChange(false);
+    } catch {
+      // Hook handles error toast; preserve form inputs and uploaded attachments on error
+    }
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && !isSubmitting && !isUploading) {
+    if (!nextOpen && (isSubmitting || isUploading)) return;
+
+    if (!nextOpen) {
+      for (const file of uploadedFiles) {
+        void onRemoveStagedFile?.(file.file_id);
+      }
       form.reset();
       setUploadedFiles([]);
     }
@@ -430,7 +442,7 @@ export function CreateJobOrderDialog({
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                  accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
                   onChange={handleFilesSelected}
                   className="hidden"
                 />
