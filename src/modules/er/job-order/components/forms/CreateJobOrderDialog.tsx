@@ -35,7 +35,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -51,6 +50,7 @@ import {
   ServiceCategory,
   UploadedJobOrderFile,
 } from "@/modules/er/job-order/types/job-order.schema";
+import { DialogSearchableSelect } from "@/modules/er/job-order/components/forms/DialogSearchableSelect";
 
 const JobOrderFormSchema = z
   .object({
@@ -321,7 +321,7 @@ export function CreateJobOrderDialog({
                         Target Department (Optional)
                       </FormLabel>
                       <FormControl>
-                        <SearchableSelect
+                        <DialogSearchableSelect
                           options={departmentOptions}
                           value={field.value ?? ""}
                           onValueChange={(val) => {
@@ -360,7 +360,7 @@ export function CreateJobOrderDialog({
                         Target Personnel (Optional)
                       </FormLabel>
                       <FormControl>
-                        <SearchableSelect
+                        <DialogSearchableSelect
                           options={employeeOptions}
                           value={field.value ?? ""}
                           onValueChange={(val) => {

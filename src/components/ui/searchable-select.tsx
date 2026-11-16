@@ -37,72 +37,11 @@ export function SearchableSelect({
     className,
 }: SearchableSelectProps) {
     const [open, setOpen] = React.useState(false);
-    const cleanupRef = React.useRef<(() => void) | null>(null);
 
     // Find the label for the current value
     const selectedLabel = React.useMemo(() => {
         return options.find((opt) => opt.value === value)?.label;
     }, [options, value]);
-
-    // Cleanup wheel listener on unmount
-    React.useEffect(() => {
-        return () => {
-            if (cleanupRef.current) {
-                cleanupRef.current();
-                cleanupRef.current = null;
-            }
-        };
-    }, []);
-
-    // Callback ref attached to the popover content container.
-    // Guarantees immediate attachment upon mounting, eliminating race conditions with portaled dialogs.
-    const setContainerRef = React.useCallback((node: HTMLDivElement | null) => {
-        if (cleanupRef.current) {
-            cleanupRef.current();
-            cleanupRef.current = null;
-        }
-
-        if (!node) return;
-
-        const handleWheel = (e: WheelEvent) => {
-            const list = node.querySelector<HTMLElement>(
-                "[data-slot='command-list'], [cmdk-list]"
-            );
-            if (!list) return;
-
-            // Stop event bubbling to document so Radix Dialog's react-remove-scroll
-            // does NOT intercept and cancel (preventDefault) the wheel event
-            e.stopPropagation();
-
-            // Normalize delta based on deltaMode (pixels vs lines vs pages).
-            // On Windows mouse wheels, deltaMode is typically 1 (DOM_DELTA_LINE) where deltaY is 3.
-            // Multiplying by line height ensures responsive scrolling instead of microscopic 3px movement.
-            let delta = e.deltaY;
-            if (e.deltaMode === 1) {
-                delta *= 24;
-            } else if (e.deltaMode === 2) {
-                delta *= list.clientHeight;
-            }
-
-            const isScrollingDown = delta > 0;
-            const canScrollDown =
-                isScrollingDown &&
-                list.scrollTop + list.clientHeight < list.scrollHeight - 1;
-            const canScrollUp = !isScrollingDown && list.scrollTop > 1;
-
-            if (canScrollDown || canScrollUp) {
-                list.scrollTop += delta;
-            }
-
-            // Always prevent default when interacting with the popover so background modal/page does not scroll
-            e.preventDefault();
-        };
-
-        node.addEventListener("wheel", handleWheel, { passive: false });
-        cleanupRef.current = () => {
-            node.removeEventListener("wheel", handleWheel);
-        };
-    }, []);
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -119,34 +58,39 @@ export function SearchableSelect({
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <div ref={setContainerRef} className="w-full">
-                    <Command>
-                        <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
-                        <CommandList>
-                            <CommandEmpty>No results found.</CommandEmpty>
-                            <CommandGroup>
-                                {options.map((opt) => (
-                                    <CommandItem
-                                        key={opt.value}
-                                        value={opt.label} // Use label for searching
-                                        onSelect={() => {
-                                            onValueChange(opt.value);
-                                            setOpen(false);
-                                        }}
-                                    >
-                                        <Check
-                                            className={cn(
-                                                "mr-2 h-4 w-4",
-                                                value === opt.value ? "opacity-100" : "opacity-0"
-                                            )}
-                                        />
-                                        {opt.label}
-                                    </CommandItem>
-                                ))}
-                            </CommandGroup>
-                        </CommandList>
-                    </Command>
-                </div>
+                <Command>
+                    <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
+                    <CommandList>
+                        <CommandEmpty>No results found.</CommandEmpty>
+                        <CommandGroup>
+                            {options.map((opt) => (
+                                <CommandItem
+                                    key={opt.value}
+                                    value={opt.label} // Use label for searching
+                                    onSelect={() => {
+                                        // We need to map back to the ID/value since CommandItem uses text content or value prop
+                                        // Here we used label as value for search, so we find the option by label and call onValueChange with its value
+                                        // However, simpler is to use the option.value if unique, but Command compares normalized search.
+                                        // Let's stick to using the opt.value if we want precise selection.
+                                        // Re-eval: onSelect returns the value prop (opt.label).
+                                        // Actually, let's use the option value but ensure standard shadcn pattern.
+
+                                        onValueChange(opt.value);
+                                        setOpen(false);
+                                    }}
+                                >
+                                    <Check
+                                        className={cn(
+                                            "mr-2 h-4 w-4",
+                                            value === opt.value ? "opacity-100" : "opacity-0"
+                                        )}
+                                    />
+                                    {opt.label}
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </CommandList>
+                </Command>
             </PopoverContent>
         </Popover>
     );

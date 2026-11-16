@@ -21,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -40,6 +39,7 @@ import {
   UpdateJobOrderInput,
 } from "@/modules/er/job-order/types/job-order.schema";
 import { JobOrderStatusBadge } from "@/modules/er/job-order/components/data-table/JobOrderStatusBadge";
+import { DialogSearchableSelect } from "@/modules/er/job-order/components/forms/DialogSearchableSelect";
 
 interface JobOrderDetailsModalProps {
   jobOrder: JobOrder | null;
@@ -390,7 +390,7 @@ export function JobOrderDetailsModal({
                       <span className="text-xs font-medium text-muted-foreground">
                         Target Department
                       </span>
-                      <SearchableSelect
+                      <DialogSearchableSelect
                         options={departmentOptions}
                         value={currentDeptId}
                         onValueChange={(val) => {
@@ -405,7 +405,7 @@ export function JobOrderDetailsModal({
                       <span className="text-xs font-medium text-muted-foreground">
                         Assigned Employee (Optional)
                       </span>
-                      <SearchableSelect
+                      <DialogSearchableSelect
                         options={employeeOptions}
                         value={currentUserId}
                         onValueChange={(val) => {
