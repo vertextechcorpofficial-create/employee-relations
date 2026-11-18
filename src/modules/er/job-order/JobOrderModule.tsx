@@ -1,0 +1,550 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  AlertCircle,
+  Building2,
+  FolderCog,
+  Inbox,
+  Plus,
+  RefreshCw,
+  Search,
+  Ticket,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ErrorPage } from "@/app/(employee-relations)/er/_components/ErrorPage";
+import { CategoryTable } from "@/modules/er/job-order/components/data-table/CategoryTable";
+import { JobOrderTable } from "@/modules/er/job-order/components/data-table/JobOrderTable";
+import { CategoryFormDialog } from "@/modules/er/job-order/components/forms/CategoryFormDialog";
+import { CreateJobOrderDialog } from "@/modules/er/job-order/components/forms/CreateJobOrderDialog";
+import { JobOrderDetailsModal } from "@/modules/er/job-order/components/modals/JobOrderDetailsModal";
+import { useJobOrderDirectory } from "@/modules/er/job-order/hooks/useJobOrderDirectory";
+import { useJobOrderUpload } from "@/modules/er/job-order/hooks/useJobOrderUpload";
+import { useJobOrders } from "@/modules/er/job-order/hooks/useJobOrders";
+import { useServiceCategories } from "@/modules/er/job-order/hooks/useServiceCategories";
+import {
+  CreateJobOrderInput,
+  CreateServiceCategoryInput,
+  JO_STATUS_VALUES,
+  JobOrder,
+  JobOrderStatus,
+  ServiceCategory,
+  UpdateJobOrderInput,
+} from "@/modules/er/job-order/types/job-order.schema";
+
+/**
+ * Main client shell for the Digital Job Order / Ticketing module.
+ * Coordinates Requester POV (department/employee targeting), Receiver Queue
+ * (department filter + direct status updates without acknowledgement), and Service Categories.
+ */
+export function JobOrderModule() {
+  const jobOrdersState = useJobOrders("all");
+  const uploadState = useJobOrderUpload();
+  const categoriesState = useServiceCategories();
+  const directory = useJobOrderDirectory();
+
+  const [activeTab, setActiveTab] = useState<string>("my_requests");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("ALL");
+
+  const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] =
+    useState<boolean>(false);
+  const [editingCategory, setEditingCategory] =
+    useState<ServiceCategory | null>(null);
+
+  const [selectedJobOrder, setSelectedJobOrder] = useState<JobOrder | null>(
+    null
+  );
+  const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
+
+  const handleRefreshAll = async () => {
+    await Promise.all([
+      jobOrdersState.refresh(),
+      categoriesState.refresh(),
+      directory.refresh(),
+    ]);
+  };
+
+  const handleCreateJobOrder = async (payload: CreateJobOrderInput) => {
+    await jobOrdersState.submitJobOrder(payload);
+  };
+
+  const handleInlineStatusChange = async (
+    joId: number,
+    nextStatus: JobOrderStatus
+  ) => {
+    const updated = await jobOrdersState.updateJobOrder(joId, {
+      status: nextStatus,
+    });
+    if (selectedJobOrder?.id === joId) {
+      setSelectedJobOrder(updated);
+    }
+  };
+
+  const handleModalUpdateJobOrder = async (
+    joId: number,
+    payload: UpdateJobOrderInput
+  ) => {
+    const updated = await jobOrdersState.updateJobOrder(joId, payload);
+    if (selectedJobOrder?.id === joId) {
+      setSelectedJobOrder(updated);
+    }
+  };
+
+  const handleSaveCategory = async (
+    payload: CreateServiceCategoryInput,
+    editId?: number
+  ) => {
+    if (editId) {
+      await categoriesState.updateCategory(editId, payload);
+    } else {
+      await categoriesState.createCategory(payload);
+    }
+  };
+
+  const handleToggleCategory = async (
+    cat: ServiceCategory,
+    nextActive: boolean
+  ) => {
+    await categoriesState.updateCategory(cat.id, { is_active: nextActive });
+  };
+
+  const filterList = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const empDeptMap = new Map<number, number>();
+    for (const emp of directory.employees) {
+      if (emp.user_department) {
+        empDeptMap.set(emp.user_id, emp.user_department);
+      }
+    }
+
+    return (list: JobOrder[]) =>
+      list.filter((jo) => {
+        const matchesStatus =
+          statusFilter === "ALL" || jo.status === statusFilter;
+
+        const directDeptId =
+          jo.target_department_id !== null &&
+          jo.target_department_id !== undefined
+            ? String(jo.target_department_id)
+            : null;
+        const derivedDeptId =
+          jo.target_user_id !== null && jo.target_user_id !== undefined
+            ? String(empDeptMap.get(jo.target_user_id) ?? "")
+            : null;
+
+        const matchesDept =
+          departmentFilter === "ALL" ||
+          directDeptId === departmentFilter ||
+          (derivedDeptId !== null &&
+            derivedDeptId !== "" &&
+            derivedDeptId === departmentFilter);
+
+        const matchesQuery =
+          !q ||
+          jo.jo_number.toLowerCase().includes(q) ||
+          jo.remarks.toLowerCase().includes(q) ||
+          (jo.category_name ?? "").toLowerCase().includes(q) ||
+          (jo.target_department_name ?? "").toLowerCase().includes(q) ||
+          (jo.target_username ?? "").toLowerCase().includes(q) ||
+          jo.requester_username.toLowerCase().includes(q);
+        return matchesStatus && matchesDept && matchesQuery;
+      });
+  }, [searchQuery, statusFilter, departmentFilter, directory.employees]);
+
+  const myOrdersRaw = useMemo(() => {
+    const uid = directory.currentUser?.user_id;
+    if (!uid) return [];
+    return jobOrdersState.jobOrders.filter((jo) => jo.requester_user_id === uid);
+  }, [jobOrdersState.jobOrders, directory.currentUser?.user_id]);
+
+  const filteredMyOrders = useMemo(
+    () => filterList(myOrdersRaw),
+    [filterList, myOrdersRaw]
+  );
+
+  const filteredReceiverOrders = useMemo(
+    () => filterList(jobOrdersState.jobOrders),
+    [filterList, jobOrdersState.jobOrders]
+  );
+
+  const stats = useMemo(() => {
+    const activeOrders =
+      activeTab === "my_requests" ? filteredMyOrders : filteredReceiverOrders;
+    return {
+      total: activeOrders.length,
+      open: activeOrders.filter((j) => j.status === "Open").length,
+      inProgress: activeOrders.filter((j) => j.status === "In Progress").length,
+      resolved: activeOrders.filter((j) => j.status === "Resolved").length,
+    };
+  }, [activeTab, filteredMyOrders, filteredReceiverOrders]);
+
+  if (jobOrdersState.error && categoriesState.error) {
+    return (
+      <ErrorPage
+        title="Unable to load Job Order module"
+        message={jobOrdersState.error}
+        onRefresh={() => void handleRefreshAll()}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header & Primary Actions */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Job Order & Service Ticketing
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Direct digital service requests to a target department or employee,
+            manage categories, and track resolution status.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleRefreshAll()}
+            disabled={jobOrdersState.isLoading || directory.isLoading}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setEditingCategory(null);
+              setIsCategoryDialogOpen(true);
+            }}
+          >
+            <FolderCog className="mr-2 h-4 w-4" />
+            Register Category
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setIsCreateOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            New Job Order
+          </Button>
+        </div>
+      </div>
+
+      {directory.error && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              Unable to load departments and personnel directory: {directory.error}
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void directory.refresh()}
+            className="h-8 border-destructive/40 text-destructive hover:bg-destructive/10"
+          >
+            Retry Directory
+          </Button>
+        </div>
+      )}
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              {activeTab === "my_requests"
+                ? "My Job Orders"
+                : "Total Job Orders"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {stats.total}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Open Queue
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {stats.open}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              In Progress
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {stats.inProgress}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Resolved
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {stats.resolved}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Views */}
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-4"
+      >
+        <div className="flex flex-nowrap items-center justify-between gap-3 overflow-x-auto pb-1">
+          <TabsList className="h-9 shrink-0 gap-1 bg-muted/60 p-1">
+            <TabsTrigger
+              value="my_requests"
+              className="h-7 shrink-0 gap-1.5 px-3 text-xs whitespace-nowrap"
+            >
+              <Ticket className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Job Orders</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 h-4 shrink-0 px-1 text-[10px]"
+              >
+                {filteredMyOrders.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="receiver_queue"
+              className="h-7 shrink-0 gap-1.5 px-3 text-xs whitespace-nowrap"
+            >
+              <Inbox className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Receiver&apos;s Queue</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 h-4 shrink-0 px-1 text-[10px]"
+              >
+                {filteredReceiverOrders.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="categories"
+              className="h-7 shrink-0 gap-1.5 px-3 text-xs whitespace-nowrap"
+            >
+              <FolderCog className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Categories</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 h-4 shrink-0 px-1 text-[10px]"
+              >
+                {categoriesState.categories.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          {activeTab !== "categories" && (
+            <div className="flex flex-nowrap items-center gap-2 shrink-0">
+              <div className="relative w-44 lg:w-56 shrink-0">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  type="search"
+                  spellCheck={false}
+                  aria-label="Search Job Orders"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search JO #..."
+                  className="h-9 bg-background pl-8 text-xs whitespace-nowrap"
+                />
+              </div>
+
+              <Select
+                value={departmentFilter}
+                onValueChange={setDepartmentFilter}
+              >
+                <SelectTrigger className="h-9 min-w-[195px] w-auto shrink-0 bg-background text-xs whitespace-nowrap">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <SelectValue placeholder="All Departments" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="whitespace-nowrap">
+                    All Departments
+                  </SelectItem>
+                  {directory.departments.map((dept) => (
+                    <SelectItem
+                      key={dept.department_id}
+                      value={String(dept.department_id)}
+                      className="whitespace-nowrap"
+                    >
+                      {dept.department_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {directory.currentUser?.department_id && (
+                <Button
+                  type="button"
+                  variant={
+                    departmentFilter ===
+                    String(directory.currentUser.department_id)
+                      ? "default"
+                      : "outline"
+                  }
+                  size="sm"
+                  className="h-9 shrink-0 gap-1.5 whitespace-nowrap text-xs"
+                  onClick={() => {
+                    const myDeptId = String(
+                      directory.currentUser?.department_id
+                    );
+                    setDepartmentFilter((prev) =>
+                      prev === myDeptId ? "ALL" : myDeptId
+                    );
+                  }}
+                  title={`Filter to ${directory.currentUser.department_name ?? "My Department"}`}
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  <span>My Department</span>
+                </Button>
+              )}
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="h-9 w-[130px] shrink-0 bg-background text-xs">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  {JO_STATUS_VALUES.map((st) => (
+                    <SelectItem key={st} value={st}>
+                      {st}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+
+        {/* Tab 1: Requester POV */}
+        <TabsContent value="my_requests" className="space-y-4">
+          <JobOrderTable
+            jobOrders={filteredMyOrders}
+            isLoading={jobOrdersState.isLoading || directory.isLoading}
+            isReceiverMode={false}
+            onViewDetails={(jo) => {
+              setSelectedJobOrder(jo);
+              setIsDetailsOpen(true);
+            }}
+            onCreateNew={() => setIsCreateOpen(true)}
+          />
+        </TabsContent>
+
+        {/* Tab 2: Request Receiver POV (No Acknowledge Step) */}
+        <TabsContent value="receiver_queue" className="space-y-4">
+          <JobOrderTable
+            jobOrders={filteredReceiverOrders}
+            isLoading={jobOrdersState.isLoading}
+            isSubmitting={jobOrdersState.isSubmitting}
+            isReceiverMode={true}
+            onViewDetails={(jo) => {
+              setSelectedJobOrder(jo);
+              setIsDetailsOpen(true);
+            }}
+            onStatusChange={handleInlineStatusChange}
+          />
+        </TabsContent>
+
+        {/* Tab 3: Registration of Categories of Services */}
+        <TabsContent value="categories" className="space-y-4">
+          <CategoryTable
+            categories={categoriesState.categories}
+            isLoading={categoriesState.isLoading}
+            isSubmitting={categoriesState.isSubmitting}
+            onEdit={(cat) => {
+              setEditingCategory(cat);
+              setIsCategoryDialogOpen(true);
+            }}
+            onToggleActive={handleToggleCategory}
+            onCreateNew={() => {
+              setEditingCategory(null);
+              setIsCategoryDialogOpen(true);
+            }}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* Dialogs & Modals */}
+      <CreateJobOrderDialog
+        open={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+        categories={categoriesState.categories}
+        departments={directory.departments}
+        employees={directory.employees}
+        isSubmitting={jobOrdersState.isSubmitting}
+        onUploadFile={uploadState.uploadAttachment}
+        onRemoveStagedFile={uploadState.removeStagedAttachment}
+        onSubmit={handleCreateJobOrder}
+        onOpenRegisterCategory={() => {
+          setEditingCategory(null);
+          setActiveTab("categories");
+          setIsCategoryDialogOpen(true);
+        }}
+      />
+
+      <CategoryFormDialog
+        open={isCategoryDialogOpen}
+        onOpenChange={setIsCategoryDialogOpen}
+        editingCategory={editingCategory}
+        isSubmitting={categoriesState.isSubmitting}
+        onSubmit={handleSaveCategory}
+      />
+
+      <JobOrderDetailsModal
+        key={selectedJobOrder?.id ?? "none"}
+        jobOrder={selectedJobOrder}
+        open={isDetailsOpen}
+        onOpenChange={setIsDetailsOpen}
+        departments={directory.departments}
+        employees={directory.employees}
+        isReceiverMode={activeTab === "receiver_queue"}
+        isSubmitting={jobOrdersState.isSubmitting}
+        onUpdateJobOrder={handleModalUpdateJobOrder}
+      />
+    </div>
+  );
+}
